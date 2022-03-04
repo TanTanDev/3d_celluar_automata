@@ -7,7 +7,7 @@ use bevy::{
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     math::{const_ivec3, ivec3, vec3},
     prelude::*,
-    render::view::NoFrustumCulling,
+    render::view::NoFrustumCulling, tasks::AsyncComputeTaskPool,
 };
 use fly_camera::{FlyCamera, FlyCameraPlugin};
 mod cell_renderer;
@@ -52,7 +52,12 @@ fn main() {
         start_state_value: 5,
         bounding: 50,
     };
+    let mut task_pool_settings = DefaultTaskPoolOptions::default();
+    task_pool_settings.async_compute.percent = 1.0f32;
+    task_pool_settings.compute.percent = 0.0f32; // i currently only use async_compute
+    task_pool_settings.io.percent = 0.0f32; // always use 1
     App::new()
+        .insert_resource(task_pool_settings)
         .add_plugins(DefaultPlugins)
         //.add_plugin(FrameTimeDiagnosticsPlugin::default())
         //.add_plugin(LogDiagnosticsPlugin::default())
@@ -60,6 +65,7 @@ fn main() {
         .add_plugin(CellMaterialPlugin)
         .insert_resource(rule)
         .add_plugin(CellsMultithreadedPlugin)
+        //.add_plugin(CellsSinglethreadedPlugin)
         .add_startup_system(setup)
         .run();
 }
