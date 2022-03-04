@@ -1,5 +1,5 @@
 [package]
-name = "game_of_life_3d"
+name = "3d_celluar_automata"
 version = "0.1.0"
 edition = "2021"
 
