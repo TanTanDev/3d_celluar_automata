@@ -1,5 +1,5 @@
 [package]
-name = "3d_celluar_automata"
+name = "celluar_automata"
 version = "0.1.0"
 edition = "2021"
 
