@@ -124,14 +124,14 @@ impl CellsMultithreaded {
 
                         // udpate mask
                         match self.change_mask.get_mut(&neighbour_pos) {
-                            Some(neighbour) => *neighbour = true,
+                            Some(masked) => *masked = true,
                             None => { self.change_mask.insert(*neighbour_pos, true); },
                         }
                     }
                     // no neighbour is counted for current cell so add them to the mask
                     self.states.read().unwrap().iter().for_each(|s| {
                         match self.change_mask.get_mut(&s.0) {
-                            Some(neighbour) => *neighbour = true,
+                            Some(masked) => *masked = true,
                             None => { self.change_mask.insert(*s.0, true); },
                         }
                     });
@@ -180,7 +180,8 @@ impl CellsMultithreaded {
         // drop the read of states
         drop(states);
         let job_count = task_pool.thread_num() * 2;
-        let sliced_positions: Vec<Vec<IVec3>> = positions.chunks(job_count).map(|v|v.into()).collect();
+        let chunk_size = (positions.len() / job_count).max(1);
+        let sliced_positions: Vec<Vec<IVec3>> = positions.chunks(chunk_size).map(|v|v.into()).collect();
 
         for pos_slice in sliced_positions.into_iter() {
             // prepare data needed for thread
@@ -212,9 +213,10 @@ impl CellsMultithreaded {
 
     pub fn calculate_changes(&mut self, rule: &Rule, task_pool: Res<AsyncComputeTaskPool>) {
         let mut positions: Vec<IVec3> = Vec::with_capacity(self.change_mask.len());
-        self.change_mask.iter().for_each(|k|positions.push(*k.0));
+        self.change_mask.iter().filter(|k| *k.1).for_each(|k|positions.push(*k.0));
         let job_count = task_pool.thread_num() * 2;
-        let sliced_mask: Vec<Vec<IVec3>> = positions.chunks(job_count).map(|v|v.into()).collect();
+        let chunk_size = (positions.len() / job_count).max(1);
+        let sliced_mask: Vec<Vec<IVec3>> = positions.chunks(chunk_size).map(|v|v.into()).collect();
         for slice_mask in sliced_mask.into_iter() {
             // prepare data for thread
             let state_rc_clone = self.states.clone();
@@ -300,7 +302,8 @@ impl CellsMultithreaded {
 
         // ALL calculations are done, reset cached data
         self.changes.clear();
-        self.change_mask.clear();
+        // self.change_mask.clear();
+        self.change_mask.iter_mut().for_each(|m|*m.1 = false);
         self.neighbours.write().unwrap().clear();
     }
 }
@@ -323,7 +326,7 @@ fn spawn_noise(
     mut cells: ResMut<CellsMultithreaded>,
     keyboard_input: Res<Input<KeyCode>>,
 ) {
-    if !keyboard_input.just_pressed(KeyCode::P) {
+    if !keyboard_input.pressed(KeyCode::P) {
         return;
     }
     if cells.is_busy() {
