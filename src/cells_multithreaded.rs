@@ -1,13 +1,13 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Mutex};
 
 use bevy::{
     input::Input,
     math::{ivec3, vec3, IVec3},
-    prelude::{Color, KeyCode, Plugin, Query, Res, ResMut, info_span},
-    tasks::{AsyncComputeTaskPool, Task}
+    prelude::{info_span, Color, KeyCode, Plugin, Query, Res, ResMut},
+    tasks::{AsyncComputeTaskPool, Task},
 };
-use std::sync::{Arc, RwLock};
 use futures_lite::future;
+use std::sync::{Arc, RwLock};
 
 use crate::{
     cell_renderer::{InstanceData, InstanceMaterialData},
@@ -30,6 +30,8 @@ struct CellsMultithreaded {
     process_step: ProcessStep,
     accumulated_neighbour_writes: Vec<IVec3>,
 
+    position_thread_cache: Vec<Arc<Mutex<Vec<IVec3>>>>,
+
     // the instance buffer data
     instance_material_data: Option<Vec<InstanceData>>,
 }
@@ -47,7 +49,7 @@ pub enum ProcessStep {
     CalculateChanges,
     AwaitChanges,
     // the final step is to apply the changes from the data
-    // instead of having a seperate state for doing that, it's done it the AwaitChanges state 
+    // instead of having a seperate state for doing that, it's done it the AwaitChanges state
     // to avoid having to wait 1 frame to get into that state
 }
 
@@ -75,6 +77,7 @@ impl CellsMultithreaded {
             process_step: ProcessStep::CalculateNeighbours,
             instance_material_data: None,
             accumulated_neighbour_writes: Vec::new(),
+            position_thread_cache: Vec::new(),
         };
         utils::spawn_noise(&mut s.states.write().unwrap(), rule);
         s
@@ -96,14 +99,14 @@ impl CellsMultithreaded {
             ProcessStep::CalculateNeighbours => {
                 self.calculate_neighbours(rule, task_pool);
                 true
-            },
+            }
             ProcessStep::AwaitNeighbours => {
                 for job in self.neighbour_jobs.iter_mut() {
                     let mut task = job.take().unwrap();
                     match future::block_on(future::poll_once(&mut task)) {
                         Some(mut results) => {
                             self.accumulated_neighbour_writes.append(&mut results);
-                        },
+                        }
                         // failed to retrieve data continue
                         None => *job = Some(task),
                     }
@@ -125,25 +128,32 @@ impl CellsMultithreaded {
                         // udpate mask
                         match self.change_mask.get_mut(&neighbour_pos) {
                             Some(masked) => *masked = true,
-                            None => { self.change_mask.insert(*neighbour_pos, true); },
+                            None => {
+                                self.change_mask.insert(*neighbour_pos, true);
+                            }
                         }
                     }
                     // no neighbour is counted for current cell so add them to the mask
                     self.states.read().unwrap().iter().for_each(|s| {
                         match self.change_mask.get_mut(&s.0) {
                             Some(masked) => *masked = true,
-                            None => { self.change_mask.insert(*s.0, true); },
+                            None => {
+                                self.change_mask.insert(*s.0, true);
+                            }
                         }
                     });
                     self.accumulated_neighbour_writes.clear();
+                    for cached_vec in self.position_thread_cache.iter() {
+                        cached_vec.lock().unwrap().clear();
+                    }
                 }
                 is_done
-            },
+            }
             ProcessStep::CalculateChanges => {
                 //println!("num cells: {}", self.states.read().unwrap().len());
                 self.calculate_changes(rule, task_pool);
                 true
-            },
+            }
             ProcessStep::AwaitChanges => {
                 for job in self.change_jobs.iter_mut() {
                     let mut task = job.take().unwrap();
@@ -153,7 +163,7 @@ impl CellsMultithreaded {
                             for (cell_pos, state_change) in state_changes.into_iter() {
                                 self.changes.insert(cell_pos, state_change);
                             }
-                        },
+                        }
                         // failed to retrieve data continue
                         None => *job = Some(task),
                     }
@@ -163,9 +173,12 @@ impl CellsMultithreaded {
                 let done = self.change_jobs.is_empty();
                 if done {
                     self.apply_changes(rule);
+                    for cached_vec in self.position_thread_cache.iter() {
+                        cached_vec.lock().unwrap().clear();
+                    }
                 }
                 done
-            },
+            }
         };
         if advance {
             self.process_step.advance_to_next_step();
@@ -173,32 +186,43 @@ impl CellsMultithreaded {
     }
 
     pub fn calculate_neighbours(&mut self, rule: &Rule, task_pool: Res<AsyncComputeTaskPool>) {
-        //let (x_range, y_range, z_range) = rule.get_bounding_ranges();
         let states = self.states.read().unwrap();
-        let mut positions: Vec<IVec3> = Vec::with_capacity(states.len());
-        states.iter().for_each(|k|positions.push(*k.0));
-        // drop the read of states
-        drop(states);
         let job_count = task_pool.thread_num() * 2;
-        let chunk_size = (positions.len() / job_count).max(1);
-        let sliced_positions: Vec<Vec<IVec3>> = positions.chunks(chunk_size).map(|v|v.into()).collect();
+        let chunk_size = ((states.len() as f32 / job_count as f32).ceil() as usize).max(1);
+        // i dynamically size the position_thread_cache in case the async_compute_task_pool threads increases
+        while self.position_thread_cache.len() < job_count {
+            self.position_thread_cache
+                .push(Arc::new(Mutex::new(Vec::with_capacity(chunk_size))));
+        }
 
-        for pos_slice in sliced_positions.into_iter() {
+        states.iter().enumerate().for_each(|(i, p)| {
+            let slice_index = i / chunk_size;
+            let mut position_thread_target =
+                self.position_thread_cache[slice_index].lock().unwrap();
+            position_thread_target.push(*p.0);
+        });
+        drop(states);
+
+        //for pos_slice in sliced_positions.into_iter() {
+        for position_cache_index in 0..job_count {
             // prepare data needed for thread
             let state_rc_clone = self.states.clone();
             let rule_states = rule.states;
             let rule_bounding = rule.bounding;
+            let position_cache = self.position_thread_cache[position_cache_index].clone();
 
             let neighbour_task = task_pool.spawn(async move {
+                let position_cache = position_cache.lock().unwrap();
                 let mut results: Vec<IVec3> = vec![];
                 let states = state_rc_clone.read().unwrap();
-                for cell_pos in pos_slice.into_iter() {
+                //for cell_pos in pos_slice.into_iter() {
+                for cell_pos in position_cache.iter() {
                     if let Some(cell) = states.get(&cell_pos) {
-                            // count as neighbour if new
+                        // count as neighbour if new
                         if cell.value == rule_states {
                             // get neighbouring cells and increment
                             for dir in MOOSE_NEIGHBOURS.iter() {
-                                let mut neighbour_pos = cell_pos + *dir;
+                                let mut neighbour_pos = *cell_pos + *dir;
                                 keep_in_bounds(rule_bounding, &mut neighbour_pos);
                                 results.push(neighbour_pos);
                             }
@@ -212,12 +236,23 @@ impl CellsMultithreaded {
     }
 
     pub fn calculate_changes(&mut self, rule: &Rule, task_pool: Res<AsyncComputeTaskPool>) {
-        let mut positions: Vec<IVec3> = Vec::with_capacity(self.change_mask.len());
-        self.change_mask.iter().filter(|k| *k.1).for_each(|k|positions.push(*k.0));
         let job_count = task_pool.thread_num() * 2;
-        let chunk_size = (positions.len() / job_count).max(1);
-        let sliced_mask: Vec<Vec<IVec3>> = positions.chunks(chunk_size).map(|v|v.into()).collect();
-        for slice_mask in sliced_mask.into_iter() {
+        let chunk_size =
+            ((self.change_mask.len() as f32 / job_count as f32).ceil() as usize).max(1);
+        // i dynamically size the position_thread_cache in case the async_compute_task_pool threads increases
+        while self.position_thread_cache.len() < job_count {
+            self.position_thread_cache
+                .push(Arc::new(Mutex::new(Vec::with_capacity(chunk_size))));
+        }
+
+        self.change_mask.iter().enumerate().for_each(|(i, p)| {
+            let slice_index = i / chunk_size;
+            let mut position_thread_target =
+                self.position_thread_cache[slice_index].lock().unwrap();
+            position_thread_target.push(*p.0);
+        });
+
+        for position_cache_index in 0..job_count {
             // prepare data for thread
             let state_rc_clone = self.states.clone();
             let neighbours_rc_clone = self.neighbours.clone();
@@ -225,11 +260,14 @@ impl CellsMultithreaded {
             let rule_birth_rule = rule.birth_rule.clone();
             let rule_start_state_value = rule.start_state_value;
             let rule_bounding = rule.bounding;
+            let position_cache = self.position_thread_cache[position_cache_index].clone();
+
             let changes_task = task_pool.spawn(async move {
+                let position_cache = position_cache.lock().unwrap();
                 let mut changes = Vec::new();
                 let states = state_rc_clone.read().unwrap();
                 let neighbours = neighbours_rc_clone.read().unwrap();
-                for cell_pos in slice_mask {
+                for cell_pos in position_cache.iter() {
                     let neighbours = match neighbours.get(&cell_pos) {
                         Some(n) => *n,
                         None => 0,
@@ -239,7 +277,7 @@ impl CellsMultithreaded {
                             if !(rule_survival_rule.in_range(neighbours)
                                 && cell.value == rule_start_state_value)
                             {
-                                changes.push((cell_pos, StateChange::Decay));
+                                changes.push((*cell_pos, StateChange::Decay));
                             }
                         }
                         None => {
@@ -252,7 +290,7 @@ impl CellsMultithreaded {
                                     && cell_pos.z >= -rule_bounding
                                     && cell_pos.z <= rule_bounding
                                 {
-                                    changes.push((cell_pos, StateChange::Spawn));
+                                    changes.push((*cell_pos, StateChange::Spawn));
                                 }
                             }
                         }
@@ -277,8 +315,7 @@ impl CellsMultithreaded {
                     cell.value = value as u8;
                 }
                 StateChange::Spawn => {
-                    states
-                        .insert(*cell_pos, State::new(rule.start_state_value));
+                    states.insert(*cell_pos, State::new(rule.start_state_value));
                 }
             }
         }
@@ -299,11 +336,10 @@ impl CellsMultithreaded {
         }
         self.instance_material_data = Some(instance_data);
 
-
         // ALL calculations are done, reset cached data
         self.changes.clear();
         // self.change_mask.clear();
-        self.change_mask.iter_mut().for_each(|m|*m.1 = false);
+        self.change_mask.iter_mut().for_each(|m| *m.1 = false);
         self.neighbours.write().unwrap().clear();
     }
 }

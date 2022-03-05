@@ -7,7 +7,8 @@ use bevy::{
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     math::{const_ivec3, ivec3, vec3},
     prelude::*,
-    render::view::NoFrustumCulling, tasks::AsyncComputeTaskPool,
+    render::view::NoFrustumCulling,
+    tasks::AsyncComputeTaskPool,
 };
 use fly_camera::{FlyCamera, FlyCameraPlugin};
 mod cell_renderer;
@@ -44,10 +45,10 @@ fn main() {
         //birth_rule: Value::Singles(vec![4,8,9]),
         //survival_rule: Value::Range(9..=26),
         //birth_rule: Value::Range(5..=7),
-        //survival_rule: Value::Single(4),
-        //birth_rule: Value::Single(4),
-        survival_rule: Value::Range(8..=26),
-        birth_rule: Value::Singles(vec![4, 12, 13, 15]),
+        survival_rule: Value::Single(4),
+        birth_rule: Value::Single(4),
+        //survival_rule: Value::Range(8..=26),
+        //birth_rule: Value::Singles(vec![4, 12, 13, 15]),
         states: 5,
         start_state_value: 5,
         bounding: 50,
@@ -101,13 +102,12 @@ fn setup(
         NoFrustumCulling,
     ));
     // cube
-    commands
-        .spawn_bundle(PbrBundle {
-            mesh: meshes.add(Mesh::from(shape::Cube { size: 1.0 })),
-            material: materials.add(Color::rgb(0.8, 0.7, 0.6).into()),
-            transform: Transform::from_xyz(0.0, 0.5, 0.0),
-            ..Default::default()
-        });
+    commands.spawn_bundle(PbrBundle {
+        mesh: meshes.add(Mesh::from(shape::Cube { size: 1.0 })),
+        material: materials.add(Color::rgb(0.8, 0.7, 0.6).into()),
+        transform: Transform::from_xyz(0.0, 0.5, 0.0),
+        ..Default::default()
+    });
 
     // camera
     commands
