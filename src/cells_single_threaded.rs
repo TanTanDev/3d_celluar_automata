@@ -3,23 +3,23 @@ use std::collections::HashMap;
 use bevy::{
     input::Input,
     math::{ivec3, vec3, IVec3},
-    prelude::{Color, KeyCode, Plugin, Query, Res, ResMut},
+    prelude::{EventWriter, KeyCode, Plugin, Query, Res, ResMut},
 };
 
 use crate::{
     cell_renderer::{InstanceData, InstanceMaterialData},
-    neighbours::MOOSE_NEIGHBOURS,
+    rotating_camera::UpdateEvent,
     rule::Rule,
     utils::{self, keep_in_bounds},
-    State,
+    CellState,
 };
 
 struct CellsSinglethreaded {
-    states: HashMap<IVec3, State>,
+    states: HashMap<IVec3, CellState>,
     // cached datta used for calculating state
     neighbours: HashMap<IVec3, u8>,
     changes: HashMap<IVec3, i32>,
-    spawn: Vec<IVec3>,
+    spawn: Vec<(IVec3, u8)>, // neighbours
 }
 
 impl CellsSinglethreaded {
@@ -39,27 +39,18 @@ impl CellsSinglethreaded {
     }
 
     pub fn calculate_neighbours(&mut self, rule: &Rule) {
-        let (x_range, y_range, z_range) = rule.get_bounding_ranges();
-
-        for z in z_range.clone() {
-            for y in y_range.clone() {
-                for x in x_range.clone() {
-                    let cell_pos = ivec3(x, y, z);
-                    if let Some(cell) = self.states.get(&cell_pos) {
-                        // count as neighbour if new
-                        if cell.value == rule.states {
-                            // get neighbouring cells and increment
-                            for dir in MOOSE_NEIGHBOURS.iter() {
-                                let mut neighbour_pos = cell_pos + *dir;
-                                keep_in_bounds(rule.bounding, &mut neighbour_pos);
-                                if !self.neighbours.contains_key(&neighbour_pos) {
-                                    self.neighbours.insert(neighbour_pos, 0);
-                                }
-                                let neighbour = self.neighbours.get_mut(&neighbour_pos).unwrap();
-                                *neighbour += 1;
-                            }
-                        }
+        for (cell_pos, cell) in self.states.iter() {
+            // count as neighbour if new
+            if cell.value == rule.states {
+                // get neighbouring cells and increment
+                for dir in rule.neighbour_method.get_neighbour_iter() {
+                    let mut neighbour_pos = *cell_pos + *dir;
+                    keep_in_bounds(rule.bounding_size, &mut neighbour_pos);
+                    if !self.neighbours.contains_key(&neighbour_pos) {
+                        self.neighbours.insert(neighbour_pos, 0);
                     }
+                    let neighbour = self.neighbours.get_mut(&neighbour_pos).unwrap();
+                    *neighbour += 1;
                 }
             }
         }
@@ -78,7 +69,7 @@ impl CellsSinglethreaded {
                     match self.states.get(&cell_pos) {
                         Some(cell) => {
                             if !(rule.survival_rule.in_range(neighbours)
-                                && cell.value == rule.start_state_value)
+                                && cell.value == rule.states)
                             {
                                 self.changes.insert(cell_pos, -1i32);
                             }
@@ -86,14 +77,14 @@ impl CellsSinglethreaded {
                         None => {
                             // check if should spawn
                             if rule.birth_rule.in_range(neighbours) {
-                                if cell_pos.x >= -rule.bounding
-                                    && cell_pos.x <= rule.bounding
-                                    && cell_pos.y >= -rule.bounding
-                                    && cell_pos.y <= rule.bounding
-                                    && cell_pos.z >= -rule.bounding
-                                    && cell_pos.z <= rule.bounding
+                                if cell_pos.x >= -rule.bounding_size
+                                    && cell_pos.x <= rule.bounding_size
+                                    && cell_pos.y >= -rule.bounding_size
+                                    && cell_pos.y <= rule.bounding_size
+                                    && cell_pos.z >= -rule.bounding_size
+                                    && cell_pos.z <= rule.bounding_size
                                 {
-                                    self.spawn.push(cell_pos);
+                                    self.spawn.push((cell_pos, neighbours));
                                 }
                             }
                         }
@@ -105,9 +96,15 @@ impl CellsSinglethreaded {
 
     pub fn apply_changes(&mut self, rule: &Rule) {
         // apply new spawns
-        for cell_pos in self.spawn.iter() {
-            self.states
-                .insert(*cell_pos, State::new(rule.start_state_value));
+        for (cell_pos, neighbours) in self.spawn.iter() {
+            self.states.insert(
+                *cell_pos,
+                CellState::new(
+                    rule.states,
+                    *neighbours,
+                    utils::dist_to_center(*cell_pos, rule),
+                ),
+            );
         }
         // apply state changes
         for changes in self.changes.iter() {
@@ -125,16 +122,17 @@ impl CellsSinglethreaded {
         self.neighbours.clear();
     }
 }
-
 fn tick_cell(
     rule: Res<Rule>,
     mut cells: ResMut<CellsSinglethreaded>,
     keyboard_input: Res<Input<KeyCode>>,
+    mut cell_event: EventWriter<UpdateEvent>,
 ) {
     if !keyboard_input.pressed(KeyCode::E) {
         return;
     }
     cells.tick(&rule);
+    cell_event.send(UpdateEvent);
 }
 
 fn spawn_noise(
@@ -172,8 +170,17 @@ fn prepare_cell_data(
         instance_data.0.push(InstanceData {
             position: vec3(pos.x as f32, pos.y as f32, pos.z as f32),
             scale: 1.0,
-            color: Color::rgba(cell.1.value as f32 / rule.states as f32, 0.0, 0.0, 1.0)
+            color: rule
+                .color_method
+                .color(
+                    rule.states,
+                    cell.1.value,
+                    cell.1.neighbours,
+                    cell.1.dist_to_center,
+                )
                 .as_rgba_f32(),
+            //color: Color::rgba(cell.1.value as f32 / rule.states as f32, 0.0, 0.0, 1.0)
+            //    .as_rgba_f32(),
         });
     }
 }

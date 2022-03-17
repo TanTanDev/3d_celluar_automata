@@ -14,7 +14,7 @@ use bevy::{
         },
         render_resource::*,
         renderer::RenderDevice,
-        view::{ComputedVisibility, ExtractedView, Msaa, NoFrustumCulling, Visibility},
+        view::{ExtractedView, Msaa},
         RenderApp, RenderStage,
     },
 };

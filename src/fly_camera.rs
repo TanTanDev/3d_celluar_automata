@@ -80,8 +80,7 @@ fn forward_vector(rotation: &Quat) -> Vec3 {
 
 fn forward_walk_vector(rotation: &Quat) -> Vec3 {
     let f = forward_vector(rotation);
-    let f_flattened = Vec3::new(f.x, 0.0, f.z).normalize();
-    f_flattened
+    Vec3::new(f.x, 0.0, f.z).normalize()
 }
 
 fn strafe_vector(rotation: &Quat) -> Vec3 {

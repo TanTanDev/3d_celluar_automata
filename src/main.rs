@@ -1,57 +1,109 @@
-use std::{
-    ops::RangeInclusive,
-    sync::{Arc, Mutex},
-};
-
-use bevy::{
-    diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
-    math::{const_ivec3, ivec3, vec3},
-    prelude::*,
-    render::view::NoFrustumCulling,
-    tasks::AsyncComputeTaskPool,
-};
-use fly_camera::{FlyCamera, FlyCameraPlugin};
+use bevy::{prelude::*, render::view::NoFrustumCulling};
+use cell_event::CellStatesChangedEvent;
+pub mod cell_event;
 mod cell_renderer;
 mod cells_multithreaded;
 mod cells_single_threaded;
-mod fly_camera;
 mod neighbours;
+mod rotating_camera;
 mod rule;
 mod utils;
 use cell_renderer::*;
-use cells_multithreaded::*;
+//use cells_multithreaded::*;
 use cells_single_threaded::*;
-use neighbours::MOOSE_NEIGHBOURS;
-use rand::Rng;
+use neighbours::NeighbourMethod;
+use rotating_camera::{RotatingCamera, RotatingCameraPlugin};
 use rule::*;
-use utils::keep_in_bounds;
-
-use std::collections::HashMap;
 
 #[derive(Debug)]
-pub struct State {
+pub struct CellState {
     value: u8,
+    neighbours: u8,
+    dist_to_center: f32,
 }
 
-impl State {
-    pub fn new(value: u8) -> Self {
-        State { value }
+impl CellState {
+    pub fn new(value: u8, neighbours: u8, dist_to_center: f32) -> Self {
+        CellState {
+            value,
+            neighbours,
+            dist_to_center,
+        }
     }
 }
 
 fn main() {
     let rule = Rule {
+        bounding_size: 25,
+
+        // builder
+        survival_rule: Value::Singles(vec![2, 6, 9]),
+        birth_rule: Value::Singles(vec![4, 6, 8, 9, 10]),
+        states: 10,
+        color_method: ColorMethod::DistToCenter(Color::RED, Color::YELLOW),
+        neighbour_method: NeighbourMethod::Moore,
+        // VN pyramid
+        // survival_rule: Value::Range(0..=6),
+        // birth_rule: Value::Singles(vec![1,3]),
+        // states: 2,
+        // color_method: ColorMethod::DistToCenter(Color::BLUE, Color::GREEN),
+        // neighbour_method: NeighbourMethod::VonNeuman,
+
+        // fancy snancy
+        //survival_rule: Value::Singles(vec![0,1,2,3,7,8,9,11,13,18,21,22,24,26]),
+        //birth_rule: Value::Singles(vec![4,13,17,20,21,22,23,24,26]),
+        //states: 4,
+        //color_method: ColorMethod::StateLerp(Color::BLUE, Color::RED),
+        //neighbour_method: NeighbourMethod::Moore,
+
+        // pretty crystals
+        // survival_rule: Value::Singles(vec![5,6,7,8]),
+        // birth_rule: Value::Singles(vec![6,7,9]),
+        // states: 10,
+        // color_method: ColorMethod::DistToCenter(Color::BLUE, Color::GREEN),
+        //neighbour_method: NeighbourMethod::Moore,
+
+        // swapping structures
         //survival_rule: Value::Singles(vec![3,6,9]),
-        //birth_rule: Value::Singles(vec![4,8,9]),
+        //birth_rule: Value::Singles(vec![4,8,10]),
+        //states: 20,
+        //color_method: ColorMethod::StateLerp(Color::GREEN, Color::RED),
+        //neighbour_method: NeighbourMethod::Moore,
+
+        // slowly expanding blob
         //survival_rule: Value::Range(9..=26),
-        //birth_rule: Value::Range(5..=7),
-        survival_rule: Value::Single(4),
-        birth_rule: Value::Single(4),
-        //survival_rule: Value::Range(8..=26),
-        //birth_rule: Value::Singles(vec![4, 12, 13, 15]),
-        states: 5,
-        start_state_value: 5,
-        bounding: 50,
+        //birth_rule: Value::Singles(vec![5,6,7,12,13,15]),
+        //states: 20,
+        //color_method: ColorMethod::StateLerp(Color::BLUE, Color::YELLOW),
+        //neighbour_method: NeighbourMethod::Moore,
+
+        // 445
+        //survival_rule: Value::Single(4),
+        //birth_rule: Value::Single(4),
+        //states: 5,
+        //color_method: ColorMethod::StateLerp(Color::RED, Color::BLACK),
+        //neighbour_method: NeighbourMethod::Moore,
+
+        // expand then die
+        //survival_rule: Value::Single(4),
+        //birth_rule: Value::Single(3),
+        //states: 20,
+        //color_method: ColorMethod::StateLerp(Color::RED, Color::BLACK),
+        //neighbour_method: NeighbourMethod::Moore,
+
+        // no idea what to call this
+        //survival_rule: Value::Singles(vec![6,7]),
+        //birth_rule: Value::Singles(vec![4,6,9,10,11]),
+        //states: 6,
+        //color_method: ColorMethod::StateLerp(Color::RED, Color::BLUE),
+        //neighbour_method: NeighbourMethod::Moore,
+
+        // LARGE LINES
+        //survival_rule: Value::Singles(vec![5]),
+        //birth_rule: Value::Singles(vec![4, 6, 9, 10, 11, 16, 17, 18, 19, 20, 21, 22, 23, 24]),
+        //states: 35,
+        //color_method: ColorMethod::StateLerp(Color::RED, Color::BLUE),
+        //neighbour_method: NeighbourMethod::Moore,
     };
     let mut task_pool_settings = DefaultTaskPoolOptions::default();
     task_pool_settings.async_compute.percent = 1.0f32;
@@ -60,24 +112,21 @@ fn main() {
     App::new()
         .insert_resource(task_pool_settings)
         .add_plugins(DefaultPlugins)
-        //.add_plugin(FrameTimeDiagnosticsPlugin::default())
-        //.add_plugin(LogDiagnosticsPlugin::default())
-        .add_plugin(FlyCameraPlugin)
+        .insert_resource(ClearColor(Color::rgb(0.65f32, 0.9f32, 0.96f32)))
+        .add_event::<CellStatesChangedEvent>()
+        .add_plugin(RotatingCameraPlugin)
         .add_plugin(CellMaterialPlugin)
         .insert_resource(rule)
-        .add_plugin(CellsMultithreadedPlugin)
-        //.add_plugin(CellsSinglethreadedPlugin)
+        // you can swap out the different implementations
+        //.add_plugin(CellsMultithreadedPlugin)
+        .add_plugin(CellsSinglethreadedPlugin)
         .add_startup_system(setup)
         .run();
 }
 
-fn setup(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-) {
+fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {
     commands.spawn().insert_bundle((
-        meshes.add(Mesh::from(shape::Cube { size: 0.9 })),
+        meshes.add(Mesh::from(shape::Cube { size: 1.0 })),
         Transform::from_xyz(0.0, 0.0, 0.0),
         GlobalTransform::default(),
         InstanceMaterialData(
@@ -101,20 +150,12 @@ fn setup(
         // component to avoid incorrect culling.
         NoFrustumCulling,
     ));
-    // cube
-    commands.spawn_bundle(PbrBundle {
-        mesh: meshes.add(Mesh::from(shape::Cube { size: 1.0 })),
-        material: materials.add(Color::rgb(0.8, 0.7, 0.6).into()),
-        transform: Transform::from_xyz(0.0, 0.5, 0.0),
-        ..Default::default()
-    });
 
     // camera
     commands
         .spawn_bundle(PerspectiveCameraBundle {
-            //transform: Transform::from_xyz(80.0, 80.0, 300.0),
             transform: Transform::from_xyz(0.0, 0.0, 15.0).looking_at(Vec3::ZERO, Vec3::Y),
             ..Default::default()
         })
-        .insert(FlyCamera::default());
+        .insert(RotatingCamera::default());
 }
