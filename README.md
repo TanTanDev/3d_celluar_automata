@@ -10,6 +10,11 @@ There are 2 implementations one is single threaded, the other one is multithread
 * **single threaded** works best in a small bounding box
 * **multi threaded** works best in a large bounding box
 
+## Controls
+* tap E to continously step forward the simulation
+* tap P to spawn a blob of cells in the middle
+
+
 ## License
 3d_celluar_automata is free and open source! All code in this repository is dual-licensed under either:
 
