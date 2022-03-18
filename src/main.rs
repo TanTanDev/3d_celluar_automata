@@ -13,8 +13,8 @@ use bevy::{prelude::*, render::view::NoFrustumCulling};
 
 use cell_renderer::*;
 use cells_multithreaded_v2::*;
-// use cells_multithreaded::*;
-// use cells_single_threaded::*;
+use cells_multithreaded::*;
+use cells_single_threaded::*;
 use neighbours::NeighbourMethod;
 use rotating_camera::{RotatingCamera, RotatingCameraPlugin};
 use rule::*;
@@ -38,7 +38,7 @@ impl CellState {
 
 fn main() {
     let rule = Rule {
-        bounding_size: 25,
+        bounding_size: 50,
 
         // builder
         survival_rule: Value::Singles(vec![2, 6, 9]),

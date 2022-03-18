@@ -1,5 +1,7 @@
-use std::collections::{HashSet};
+use std::collections::{HashSet, HashMap};
 use std::hash::Hash;
+use std::sync::{Mutex, Arc};
+use std::time::Instant;
 
 use bevy::tasks::ComputeTaskPool;
 use bevy::{
@@ -23,8 +25,8 @@ struct PrevCells {
 }
 
 impl PrevCells {
-    // Returns the number of neighbors at a given position
-    fn neighbor_count(&self, rule: &Rule, pos: &IVec3) -> u8 {
+    // Returns the number of neighbours at a given position
+    fn neighbour_count(&self, rule: &Rule, pos: &IVec3) -> u8 {
         rule.neighbour_method
             .get_neighbour_iter()
             .iter()
@@ -48,7 +50,7 @@ struct Cell {
 
     /// The cell that might be at this position
     ///
-    /// Stores (value, neighbors)
+    /// Stores (value, neighbours)
     state: Option<(u8, u8)>,
 }
 
@@ -108,17 +110,35 @@ fn tick_cells(
         return;
     }
 
-    info!("Tick Cells");
+    let timer = Instant::now();
+
+    let mut neighbours = HashMap::new();
+
+    for pos in prev_cells.states.iter() {
+
+        for dir in rule.neighbour_method.get_neighbour_iter() {
+            let mut neighbour_pos = *pos + *dir;
+            keep_in_bounds(rule.bounding_size, &mut neighbour_pos);
+
+            if !neighbours.contains_key(&neighbour_pos) {
+                neighbours.insert(neighbour_pos, 0);
+            }
+            let neighbour = neighbours.get_mut(&neighbour_pos).unwrap();
+            *neighbour += 1;
+        }
+    }
+    info!("Tick neighbours: {:.3} ms", timer.elapsed().as_secs_f64() * 1000.0);
 
     // Modifiy all cells in parallel in batches of 32
+    let timer = Instant::now();
     cell.par_for_each_mut(&task_pool, 32, |mut cell| {
-        let neighbor_count = prev_cells.neighbor_count(&rule, &cell.pos);
+        let neighbour_count = neighbours.get(&cell.pos).cloned().unwrap_or(0);
 
         if let Some(ref mut cell_state) = cell.state {
             // Decrement value if survival rule isn't passed
-            if !(cell_state.0 == rule.states && rule.survival_rule.in_range(neighbor_count)) {
+            if !(cell_state.0 == rule.states && rule.survival_rule.in_range(neighbour_count)) {
                 cell_state.0 -= 1;
-                cell_state.1 = neighbor_count;
+                cell_state.1 = neighbour_count;
 
                 // Destroy if no value left
                 if cell_state.0 == 0 {
@@ -127,21 +147,25 @@ fn tick_cells(
             }
         } else {
             // Check for birth
-            if rule.birth_rule.in_range(neighbor_count) {
-                cell.state = Some((rule.states, neighbor_count));
+            if rule.birth_rule.in_range(neighbour_count) {
+                cell.state = Some((rule.states, neighbour_count));
             }
         }
     });
 
     cell_event.send(UpdateEvent);
+
+    info!("Tick Modifiy: {:.3} ms", timer.elapsed().as_secs_f64() * 1000.0);
 }
 
 /// Save all important `Cell` entities to `PrevCells` for the next frame
 fn save(rule: Res<Rule>, mut cells: ResMut<PrevCells>, query: Query<&Cell>) {
+    let timer = Instant::now();
+
     cells.states.clear();
 
     // TODO: parallelize
-    // TODO: could calculate neighbors for next step at this time
+    // TODO: could calculate neighbours for next step at this time
     query.for_each(|cell| {
         if let Some(cell_state) = cell.state {
             if cell_state.0 == rule.states {
@@ -149,6 +173,8 @@ fn save(rule: Res<Rule>, mut cells: ResMut<PrevCells>, query: Query<&Cell>) {
             }
         }
     });
+
+    info!("Save: {:.3} ms", timer.elapsed().as_secs_f64() * 1000.0);
 }
 
 /// Convert `Cell` entities to `InstanceMaterialData`
@@ -157,6 +183,8 @@ fn prepare_cell_data(
     cells: Query<&Cell>,
     mut query: Query<&mut InstanceMaterialData>,
 ) {
+    let timer = Instant::now();
+    
     // take the first
     let mut instance_data = query.iter_mut().next().unwrap();
     instance_data.0.clear();
@@ -178,6 +206,8 @@ fn prepare_cell_data(
             });
         }
     }
+
+    info!("Prepare: {:.3} ms", timer.elapsed().as_secs_f64() * 1000.0);
 }
 
 /// The system stages to do in order
