@@ -12,8 +12,8 @@ mod utils;
 use bevy::{prelude::*, render::view::NoFrustumCulling};
 
 use cell_renderer::*;
-use cells_multithreaded_v2::*;
-use cells_multithreaded::*;
+// use cells_multithreaded::*;
+// use cells_multithreaded_v2::*;
 use cells_single_threaded::*;
 use neighbours::NeighbourMethod;
 use rotating_camera::{RotatingCamera, RotatingCameraPlugin};
@@ -121,9 +121,9 @@ fn main() {
         .add_plugin(CellMaterialPlugin)
         .insert_resource(rule)
         // you can swap out the different implementations
-        .add_plugin(CellsMultithreadedV2Plugin)
+        // .add_plugin(CellsMultithreadedV2Plugin)
         // .add_plugin(CellsMultithreadedPlugin)
-        // .add_plugin(CellsSinglethreadedPlugin)
+        .add_plugin(CellsSinglethreadedPlugin)
         .add_startup_system(setup)
         .run();
 }

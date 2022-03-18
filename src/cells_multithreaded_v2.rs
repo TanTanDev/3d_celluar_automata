@@ -1,9 +1,9 @@
-use std::collections::{HashSet, HashMap};
+use std::collections::HashSet;
 use std::hash::Hash;
-use std::sync::{Mutex, Arc};
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::Instant;
 
-use bevy::tasks::ComputeTaskPool;
+use bevy::tasks::{ComputeTaskPool, TaskPool};
 use bevy::{
     input::Input,
     math::{ivec3, vec3, IVec3},
@@ -24,21 +24,74 @@ struct PrevCells {
     states: HashSet<IVec3>,
 }
 
-impl PrevCells {
-    // Returns the number of neighbours at a given position
-    fn neighbour_count(&self, rule: &Rule, pos: &IVec3) -> u8 {
-        rule.neighbour_method
-            .get_neighbour_iter()
-            .iter()
-            .filter(|&dir| {
-                let mut neighbour_pos = *pos + *dir;
-                keep_in_bounds(rule.bounding_size, &mut neighbour_pos);
+struct Neighbors {
+    /// Cache of [`Rule::bounding_size`]
+    bounding_size: i32,
 
-                self.states.contains(&neighbour_pos)
+    /// 3D arrary of all neighbor values
+    data: Vec<Vec<Vec<AtomicU8>>>,
+}
+
+impl Neighbors {
+    fn zeros(rule: &Rule) -> Self {
+        let bounds = rule.get_bounding_ranges();
+
+        let vec = bounds
+            .0
+            .into_iter()
+            .map(|_| {
+                bounds
+                    .1
+                    .clone()
+                    .into_iter()
+                    .map(|_| {
+                        bounds
+                            .2
+                            .clone()
+                            .into_iter()
+                            .map(|_| AtomicU8::new(0))
+                            .collect::<Vec<_>>()
+                    })
+                    .collect::<Vec<_>>()
             })
-            .count()
-            .try_into()
-            .unwrap()
+            .collect::<Vec<_>>();
+
+        Self {
+            bounding_size: rule.bounding_size,
+            data: vec,
+        }
+    }
+
+    fn inc(&self, index: &IVec3) {
+        self.get(index).fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn get(&self, index: &IVec3) -> &AtomicU8 {
+        let (i, j, k) = self.convert_index(index);
+        &self.data[i][j][k]
+    }
+
+    fn convert_index(&self, index: &IVec3) -> (usize, usize, usize) {
+        (
+            (index.x + self.bounding_size).try_into().unwrap(),
+            (index.y + self.bounding_size).try_into().unwrap(),
+            (index.z + self.bounding_size).try_into().unwrap(),
+        )
+    }
+
+    fn clear(&self, _task_pool: &TaskPool) {
+        // TODO: parallelize
+        for val in self.iter() {
+            val.store(0, Ordering::Relaxed);
+        }
+    }
+
+    fn iter<'a>(&'a self) -> impl Iterator<Item = &'a AtomicU8> {
+        self.data
+            .iter()
+            .map(|data| data.iter().map(|data| data.iter()))
+            .flatten()
+            .flatten()
     }
 }
 
@@ -112,27 +165,49 @@ fn tick_cells(
 
     let timer = Instant::now();
 
-    let mut neighbours = HashMap::new();
+    let num_threads = 8;
+    info!("num_threads: {}", num_threads);
+    info!("prev_cells.states.len(): {}", prev_cells.states.len());
 
-    for pos in prev_cells.states.iter() {
+    let neighbours = Neighbors::zeros(&rule);
 
-        for dir in rule.neighbour_method.get_neighbour_iter() {
-            let mut neighbour_pos = *pos + *dir;
-            keep_in_bounds(rule.bounding_size, &mut neighbour_pos);
+    task_pool.scope(|s| {
+        let neighbours = &neighbours;
+        let prev_cells = &prev_cells;
+        let rule = &rule;
 
-            if !neighbours.contains_key(&neighbour_pos) {
-                neighbours.insert(neighbour_pos, 0);
-            }
-            let neighbour = neighbours.get_mut(&neighbour_pos).unwrap();
-            *neighbour += 1;
+        for thread_id in 0..num_threads {
+            s.spawn(async move {
+                let mut iter = prev_cells.states.iter();
+
+                // Advance to the threads starting point
+                for _ in 0..thread_id {
+                    if iter.next().is_none() {
+                        // We know the iterator is fused
+                        break;
+                    }
+                }
+
+                for pos in iter.step_by(num_threads) {
+                    for dir in rule.neighbour_method.get_neighbour_iter() {
+                        let mut neighbour_pos = *pos + *dir;
+                        keep_in_bounds(rule.bounding_size, &mut neighbour_pos);
+                        neighbours.inc(&neighbour_pos);
+                    }
+                }
+            });
         }
-    }
-    info!("Tick neighbours: {:.3} ms", timer.elapsed().as_secs_f64() * 1000.0);
+    });
+
+    info!(
+        "Tick neighbours: {:.3} ms",
+        timer.elapsed().as_secs_f64() * 1000.0
+    );
 
     // Modifiy all cells in parallel in batches of 32
     let timer = Instant::now();
     cell.par_for_each_mut(&task_pool, 32, |mut cell| {
-        let neighbour_count = neighbours.get(&cell.pos).cloned().unwrap_or(0);
+        let neighbour_count = neighbours.get(&cell.pos).load(Ordering::Relaxed);
 
         if let Some(ref mut cell_state) = cell.state {
             // Decrement value if survival rule isn't passed
@@ -155,7 +230,10 @@ fn tick_cells(
 
     cell_event.send(UpdateEvent);
 
-    info!("Tick Modifiy: {:.3} ms", timer.elapsed().as_secs_f64() * 1000.0);
+    info!(
+        "Tick Modifiy: {:.3} ms",
+        timer.elapsed().as_secs_f64() * 1000.0
+    );
 }
 
 /// Save all important `Cell` entities to `PrevCells` for the next frame
@@ -165,7 +243,8 @@ fn save(rule: Res<Rule>, mut cells: ResMut<PrevCells>, query: Query<&Cell>) {
     cells.states.clear();
 
     // TODO: parallelize
-    // TODO: could calculate neighbours for next step at this time
+    // TODO: could calculate neighbours for next step at this time, then neighbors could be
+    // calculated while rendering
     query.for_each(|cell| {
         if let Some(cell_state) = cell.state {
             if cell_state.0 == rule.states {
@@ -184,7 +263,7 @@ fn prepare_cell_data(
     mut query: Query<&mut InstanceMaterialData>,
 ) {
     let timer = Instant::now();
-    
+
     // take the first
     let mut instance_data = query.iter_mut().next().unwrap();
     instance_data.0.clear();
