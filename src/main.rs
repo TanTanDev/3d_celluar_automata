@@ -1,16 +1,20 @@
-use bevy::{prelude::*, render::view::NoFrustumCulling};
-use cell_event::CellStatesChangedEvent;
-pub mod cell_event;
 mod cell_renderer;
 mod cells_multithreaded;
+mod cells_multithreaded_v2;
 mod cells_single_threaded;
 mod neighbours;
 mod rotating_camera;
 mod rule;
 mod utils;
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+use bevy::{prelude::*, render::view::NoFrustumCulling};
+
 use cell_renderer::*;
-//use cells_multithreaded::*;
-use cells_single_threaded::*;
+use cells_multithreaded_v2::*;
+// use cells_multithreaded::*;
+// use cells_single_threaded::*;
 use neighbours::NeighbourMethod;
 use rotating_camera::{RotatingCamera, RotatingCameraPlugin};
 use rule::*;
@@ -98,7 +102,7 @@ fn main() {
         //color_method: ColorMethod::StateLerp(Color::RED, Color::BLUE),
         //neighbour_method: NeighbourMethod::Moore,
 
-        // LARGE LINES
+        // LARGE LINES`
         //survival_rule: Value::Singles(vec![5]),
         //birth_rule: Value::Singles(vec![4, 6, 9, 10, 11, 16, 17, 18, 19, 20, 21, 22, 23, 24]),
         //states: 35,
@@ -113,13 +117,13 @@ fn main() {
         .insert_resource(task_pool_settings)
         .add_plugins(DefaultPlugins)
         .insert_resource(ClearColor(Color::rgb(0.65f32, 0.9f32, 0.96f32)))
-        .add_event::<CellStatesChangedEvent>()
         .add_plugin(RotatingCameraPlugin)
         .add_plugin(CellMaterialPlugin)
         .insert_resource(rule)
         // you can swap out the different implementations
-        //.add_plugin(CellsMultithreadedPlugin)
-        .add_plugin(CellsSinglethreadedPlugin)
+        .add_plugin(CellsMultithreadedV2Plugin)
+        // .add_plugin(CellsMultithreadedPlugin)
+        // .add_plugin(CellsSinglethreadedPlugin)
         .add_startup_system(setup)
         .run();
 }
