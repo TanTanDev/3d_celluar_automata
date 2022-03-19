@@ -1,9 +1,9 @@
-use std::collections::HashSet;
 use std::hash::Hash;
+use std::ops::{Index, IndexMut};
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::Instant;
 
-use bevy::tasks::{ComputeTaskPool, TaskPool};
+use bevy::tasks::{ComputeTaskPool, ParallelSlice, TaskPool, ParallelSliceMut};
 use bevy::{
     input::Input,
     math::{ivec3, vec3, IVec3},
@@ -18,124 +18,81 @@ use crate::{
     utils::{self, keep_in_bounds},
 };
 
-/// The state of all cells last frame
-#[derive(Default)]
-struct PrevCells {
-    states: HashSet<IVec3>,
-}
-
-struct Neighbors {
+struct Cells {
     /// Cache of [`Rule::bounding_size`]
     bounding_size: i32,
 
-    /// 3D arrary of all neighbor values
-    data: Vec<Vec<Vec<AtomicU8>>>,
+    /// length of one side of the 3d array
+    side_length: usize,
+
+    /// 3D arrary of (value, neighbours)
+    data: Vec<(u8, AtomicU8)>,
 }
 
-impl Neighbors {
+impl Cells {
     fn zeros(rule: &Rule) -> Self {
-        let bounds = rule.get_bounding_ranges();
 
-        let vec = bounds
-            .0
-            .into_iter()
-            .map(|_| {
-                bounds
-                    .1
-                    .clone()
-                    .into_iter()
-                    .map(|_| {
-                        bounds
-                            .2
-                            .clone()
-                            .into_iter()
-                            .map(|_| AtomicU8::new(0))
-                            .collect::<Vec<_>>()
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>();
+        let side_length: usize = (rule.bounding_size * 2 + 1).try_into().unwrap();
+
+        let vec = (0..side_length.pow(3))
+            .map(|_| (0.into(), 0.into()))
+            .collect();
 
         Self {
             bounding_size: rule.bounding_size,
+            side_length,
             data: vec,
         }
     }
 
-    fn inc(&self, index: &IVec3) {
-        self.get(index).fetch_add(1, Ordering::Relaxed);
+    fn len(&self) -> usize {
+        self.side_length.pow(3)
     }
 
-    fn get(&self, index: &IVec3) -> &AtomicU8 {
-        let (i, j, k) = self.convert_index(index);
-        &self.data[i][j][k]
+    fn get(&self, pos: &IVec3) -> &(u8, AtomicU8) {
+        let index = self.to_index(pos);
+        &self[index]
     }
 
-    fn convert_index(&self, index: &IVec3) -> (usize, usize, usize) {
+    fn get_mut(&mut self, pos: &IVec3) -> &mut (u8, AtomicU8) {
+        let index = self.to_index(pos);
+        &mut self[index]
+    }
+
+    fn to_index(&self, pos: &IVec3) -> usize {
+        let i: usize = (pos.x + self.bounding_size).try_into().unwrap();
+        let j: usize = (pos.y + self.bounding_size).try_into().unwrap();
+        let k: usize = (pos.z + self.bounding_size).try_into().unwrap();
+
+        i * self.side_length * self.side_length + j * self.side_length + k
+    }
+
+    fn to_pos(&self, mut index: usize) -> IVec3 {
+
+        let i = index / (self.side_length * self.side_length);
+        index %= self.side_length * self.side_length;
+
+        let j = index / (self.side_length);
+        index %= self.side_length;
+
+        let k = index;
+
+        
         (
-            (index.x + self.bounding_size).try_into().unwrap(),
-            (index.y + self.bounding_size).try_into().unwrap(),
-            (index.z + self.bounding_size).try_into().unwrap(),
+            i as i32 - self.bounding_size,
+            j as i32 - self.bounding_size,
+            k as i32 - self.bounding_size,
         )
+        .into()
     }
 
-    fn clear(&self, _task_pool: &TaskPool) {
-        // TODO: parallelize
-        for val in self.iter() {
-            val.store(0, Ordering::Relaxed);
-        }
-    }
-
-    fn iter<'a>(&'a self) -> impl Iterator<Item = &'a AtomicU8> {
-        self.data
-            .iter()
-            .map(|data| data.iter().map(|data| data.iter()))
-            .flatten()
-            .flatten()
-    }
-}
-
-/// A single cell
-#[derive(Debug, Component)]
-struct Cell {
-    /// The position index of the cell
-    pos: IVec3,
-
-    /// The cell that might be at this position
-    ///
-    /// Stores (value, neighbours)
-    state: Option<(u8, u8)>,
-}
-
-impl Cell {
-    fn new(pos: IVec3) -> Self {
-        Self { pos, state: None }
-    }
-}
-
-impl From<(i32, i32, i32)> for Cell {
-    fn from(pos: (i32, i32, i32)) -> Self {
-        Cell::new(pos.into())
-    }
-}
-
-/// Spawn all the nessasary `Cell` entities and setup `PrevCells`
-fn init_cells(rule: Res<Rule>, mut commands: Commands) {
-    let bounds = rule.get_bounding_ranges();
-    for i in bounds.0 {
-        for j in bounds.1.clone() {
-            for k in bounds.2.clone() {
-                commands.spawn().insert(Cell::from((i, j, k)));
-            }
-        }
-    }
-}
-
-/// Spawn hunk of noise if the input was given
-fn spawn_noise(keyboard_input: Res<Input<KeyCode>>, mut cells: ResMut<PrevCells>) {
-    if keyboard_input.just_pressed(KeyCode::P) {
-        info!("Spawn noise");
-
+    fn spawn_noise(
+        &mut self,
+        // _task_pool: &TaskPool, // TODO: parallelize?
+        rule: &Rule
+    ) {
+        let timer = Instant::now();
+        
         // Different version of `utils::spawn_noise`
         let mut rand = rand::thread_rng();
         let spawn_size = 6;
@@ -145,121 +102,159 @@ fn spawn_noise(keyboard_input: Res<Input<KeyCode>>, mut cells: ResMut<PrevCells>
                 rand.gen_range(-spawn_size..=spawn_size),
                 rand.gen_range(-spawn_size..=spawn_size),
             );
-            cells.states.insert(pos);
+            let (value, _) = self.get_mut(&pos);
+            *value = rule.states;
         });
+
+        info!(
+            "spawn_noise: {:.3} ms",
+            timer.elapsed().as_secs_f64() * 1000.0
+        );
+    }
+
+    fn increment_neighbor(&self, pos: &IVec3) {
+        self.get(pos).1.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn add_to_neighbours(&self, rule: &Rule, index: usize) {
+        let (ref value, ref _neighbours) = self[index];
+
+        if *value == rule.states {
+            let pos = self.to_pos(index);
+            for dir in rule.neighbour_method.get_neighbour_iter() {
+                let mut neighbour_pos = pos + *dir;
+                keep_in_bounds(rule.bounding_size, &mut neighbour_pos);
+                self.increment_neighbor(&neighbour_pos);
+            }
+        }
+    }
+
+    fn calculate_neighbors(&self, task_pool: &TaskPool, rule: &Rule) {
+        
+        self.clear_neighbors(task_pool);
+
+        let timer = Instant::now();
+
+        let indicies = (0..self.len()).collect::<Vec<_>>();
+
+        indicies.par_chunk_map(task_pool, 1024, |indicies| {
+            for index in indicies {
+                self.add_to_neighbours(rule, *index);
+            }
+        });
+
+        info!(
+            "calculate_neighbors: {:.3} ms",
+            timer.elapsed().as_secs_f64() * 1000.0
+        );
+    }
+
+    fn clear_neighbors(&self, task_pool: &TaskPool) {
+        let timer = Instant::now();
+
+        let slice = &self.data[..];
+
+        slice.par_chunk_map(task_pool, 2048, |states| {
+            for (_, ref neighbours) in states {
+                neighbours.store(0, Ordering::Relaxed);
+            }
+        });
+
+        info!(
+            "clear_neighbors: {:.3} ms",
+            timer.elapsed().as_secs_f64() * 1000.0
+        );
+    }
+
+    fn update(rule: &Rule, value: &mut u8, neighbours: &u8) {
+        if *value != 0 {
+            // Decrement value if survival rule isn't passed
+            if !(*value == rule.states && rule.survival_rule.in_range(*neighbours)) {
+                *value -= 1;
+            }
+        } else {
+            // Check for birth
+            if rule.birth_rule.in_range(*neighbours) {
+                *value = rule.states;
+            }
+        }
+    }
+
+    fn update_values(&mut self, task_pool: &TaskPool, rule: &Rule) {
+        
+        let timer = Instant::now();
+        
+        let mut slice = &mut self.data[..];
+
+        slice.par_chunk_map_mut(task_pool, 1024, |states| {
+            for (ref mut value, ref mut neighbours) in states {
+                Self::update(rule, value, neighbours.get_mut());
+            }
+        });
+
+        info!(
+            "update_values: {:.3} ms",
+            timer.elapsed().as_secs_f64() * 1000.0
+        );
     }
 }
 
-/// Step all `Cell` entities forward based on `PrevCells` if the input was given
+impl Index<usize> for Cells {
+    type Output = (u8, AtomicU8);
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.data[index]
+    }
+}
+
+impl IndexMut<usize> for Cells {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.data[index]
+    }
+}
+
+/// Spawn all the nessasary `Cell` entities and setup `Cells`
+fn init_cells(rule: Res<Rule>, mut commands: Commands) {
+    commands.insert_resource(Cells::zeros(&rule))
+}
+
+fn spawn_noise(
+    keyboard_input: Res<Input<KeyCode>>,
+    rule: Res<Rule>,
+    mut cells: ResMut<Cells>,
+    mut cell_event: EventWriter<UpdateEvent>,
+) {
+    if keyboard_input.just_pressed(KeyCode::P) {
+
+        cells.spawn_noise(&rule);
+
+        cell_event.send(UpdateEvent);
+    }
+}
+
 fn tick_cells(
     task_pool: Res<ComputeTaskPool>,
-    rule: Res<Rule>,
     keyboard_input: Res<Input<KeyCode>>,
-    prev_cells: Res<PrevCells>,
-    mut cell: Query<&mut Cell>,
+    rule: Res<Rule>,
+    mut cells: ResMut<Cells>,
     mut cell_event: EventWriter<UpdateEvent>,
 ) {
     if !keyboard_input.pressed(KeyCode::E) {
         return;
     }
 
-    let timer = Instant::now();
+    // Calculate neighbor values in parallel
+    cells.calculate_neighbors(&task_pool, &rule);
 
-    let num_threads = 8;
-    info!("num_threads: {}", num_threads);
-    info!("prev_cells.states.len(): {}", prev_cells.states.len());
-
-    let neighbours = Neighbors::zeros(&rule);
-
-    task_pool.scope(|s| {
-        let neighbours = &neighbours;
-        let prev_cells = &prev_cells;
-        let rule = &rule;
-
-        for thread_id in 0..num_threads {
-            s.spawn(async move {
-                let mut iter = prev_cells.states.iter();
-
-                // Advance to the threads starting point
-                for _ in 0..thread_id {
-                    if iter.next().is_none() {
-                        // We know the iterator is fused
-                        break;
-                    }
-                }
-
-                for pos in iter.step_by(num_threads) {
-                    for dir in rule.neighbour_method.get_neighbour_iter() {
-                        let mut neighbour_pos = *pos + *dir;
-                        keep_in_bounds(rule.bounding_size, &mut neighbour_pos);
-                        neighbours.inc(&neighbour_pos);
-                    }
-                }
-            });
-        }
-    });
-
-    info!(
-        "Tick neighbours: {:.3} ms",
-        timer.elapsed().as_secs_f64() * 1000.0
-    );
-
-    // Modifiy all cells in parallel in batches of 32
-    let timer = Instant::now();
-    cell.par_for_each_mut(&task_pool, 32, |mut cell| {
-        let neighbour_count = neighbours.get(&cell.pos).load(Ordering::Relaxed);
-
-        if let Some(ref mut cell_state) = cell.state {
-            // Decrement value if survival rule isn't passed
-            if !(cell_state.0 == rule.states && rule.survival_rule.in_range(neighbour_count)) {
-                cell_state.0 -= 1;
-                cell_state.1 = neighbour_count;
-
-                // Destroy if no value left
-                if cell_state.0 == 0 {
-                    cell.state = None;
-                }
-            }
-        } else {
-            // Check for birth
-            if rule.birth_rule.in_range(neighbour_count) {
-                cell.state = Some((rule.states, neighbour_count));
-            }
-        }
-    });
+    // Modifiy all cell values in parallel
+    cells.update_values(&task_pool, &rule);
 
     cell_event.send(UpdateEvent);
-
-    info!(
-        "Tick Modifiy: {:.3} ms",
-        timer.elapsed().as_secs_f64() * 1000.0
-    );
 }
 
-/// Save all important `Cell` entities to `PrevCells` for the next frame
-fn save(rule: Res<Rule>, mut cells: ResMut<PrevCells>, query: Query<&Cell>) {
-    let timer = Instant::now();
-
-    cells.states.clear();
-
-    // TODO: parallelize
-    // TODO: could calculate neighbours for next step at this time, then neighbors could be
-    // calculated while rendering
-    query.for_each(|cell| {
-        if let Some(cell_state) = cell.state {
-            if cell_state.0 == rule.states {
-                cells.states.insert(cell.pos.clone());
-            }
-        }
-    });
-
-    info!("Save: {:.3} ms", timer.elapsed().as_secs_f64() * 1000.0);
-}
-
-/// Convert `Cell` entities to `InstanceMaterialData`
 fn prepare_cell_data(
     rule: Res<Rule>,
-    cells: Query<&Cell>,
+    cells: Res<Cells>,
     mut query: Query<&mut InstanceMaterialData>,
 ) {
     let timer = Instant::now();
@@ -267,10 +262,14 @@ fn prepare_cell_data(
     // take the first
     let mut instance_data = query.iter_mut().next().unwrap();
     instance_data.0.clear();
-    for cell in cells.iter() {
-        let pos = cell.pos;
+    
+    for index in 0..cells.len() {
+        let (value, ref neighbours) = cells[index];
 
-        if let Some(ref state) = cell.state {
+        if value != 0 {
+            let pos = cells.to_pos(index);
+            let neighbours = neighbours.load(Ordering::Relaxed);
+
             let dist_to_center = utils::dist_to_center(pos, &rule);
 
             instance_data.0.push(InstanceData {
@@ -278,15 +277,16 @@ fn prepare_cell_data(
                 scale: 1.0,
                 color: rule
                     .color_method
-                    .color(rule.states, state.0, state.1, dist_to_center)
+                    .color(rule.states, value, neighbours, dist_to_center)
                     .as_rgba_f32(),
-                //color: Color::rgba(state.value as f32 / rule.states as f32, 0.0, 0.0, 1.0)
+                //color: Color::rgba(value as f32 / rule.states as f32, 0.0, 0.0, 1.0)
                 //    .as_rgba_f32(),
             });
+            
         }
     }
 
-    info!("Prepare: {:.3} ms", timer.elapsed().as_secs_f64() * 1000.0);
+    info!("prepare_cell_data: {:.3} ms", timer.elapsed().as_secs_f64() * 1000.0);
 }
 
 /// The system stages to do in order
@@ -300,7 +300,7 @@ pub struct CellsMultithreadedV2Plugin;
 
 impl Plugin for CellsMultithreadedV2Plugin {
     fn build(&self, app: &mut bevy::prelude::App) {
-        app.init_resource::<PrevCells>()
+        app
             .add_startup_system(init_cells)
             .add_system(spawn_noise.label(Stages::SpawnNoise))
             .add_system(
@@ -308,7 +308,6 @@ impl Plugin for CellsMultithreadedV2Plugin {
                     .label(Stages::TickCells)
                     .after(Stages::SpawnNoise),
             )
-            .add_system(save.after(Stages::TickCells))
             .add_system(prepare_cell_data.after(Stages::TickCells));
     }
 }
