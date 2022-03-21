@@ -318,4 +318,8 @@ impl crate::cells::Sim for CellsMultithreaded {
     fn reset(&mut self, _rule: &Rule) {
         *self = CellsMultithreaded::new();
     }
+
+    fn cell_count(&self) -> usize {
+        self.states.read().unwrap().len()
+    }
 }

@@ -150,5 +150,9 @@ impl crate::cells::Sim for CellsSinglethreaded {
     fn reset(&mut self, _rule: &Rule) {
         *self = CellsSinglethreaded::new();
     }
+
+    fn cell_count(&self) -> usize {
+        self.states.len()
+    }
 }
 

@@ -135,6 +135,9 @@ fn setup(
     sims.add_sim("tantan multi-threaded".into(),
         Box::new(cells::tantan::CellsMultithreaded::new()));
 
+    sims.add_sim("leddoo single-threaded".into(),
+        Box::new(cells::leddoo::LeddooSingleThreaded::new()));
+
 
     commands.spawn().insert_bundle((
         meshes.add(Mesh::from(shape::Cube { size: 1.0 })),

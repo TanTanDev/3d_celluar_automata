@@ -28,7 +28,7 @@ impl Sims {
 
 
 pub fn update(
-    mut sims: ResMut<Sims>,
+    mut this: ResMut<Sims>,
     rule: Res<Rule>,
     input: Res<Input<KeyCode>>,
     mut query: Query<&mut InstanceMaterialData>,
@@ -37,16 +37,28 @@ pub fn update(
     let mut new_active = None;
     if input.just_pressed(KeyCode::Key1) { new_active = Some(0); }
     if input.just_pressed(KeyCode::Key2) { new_active = Some(1); }
+    if input.just_pressed(KeyCode::Key3) { new_active = Some(2); }
+    if input.just_pressed(KeyCode::Key4) { new_active = Some(3); }
+    if input.just_pressed(KeyCode::Key5) { new_active = Some(4); }
+    if input.just_pressed(KeyCode::Key6) { new_active = Some(5); }
+    if input.just_pressed(KeyCode::Key7) { new_active = Some(6); }
+    if input.just_pressed(KeyCode::Key8) { new_active = Some(7); }
+    if input.just_pressed(KeyCode::Key9) { new_active = Some(8); }
+    if input.just_pressed(KeyCode::Key0) { new_active = Some(9); }
 
     if let Some(new_active) = new_active {
-        sims.active_sim = Some(new_active);
-        sims.sims[new_active].1.reset(&rule);
+        if let Some(active) = this.active_sim {
+            this.sims[active].1.reset(&rule);
+        }
 
-        println!("switching to {}", sims.sims[new_active].0);
+        if new_active < this.sims.len() {
+            this.active_sim = Some(new_active);
+            println!("switching to {}", this.sims[new_active].0);
+        }
     }
 
-    if let Some(active) = sims.active_sim {
-        let sim = &mut sims.sims[active].1;
+    if let Some(active) = this.active_sim {
+        let sim = &mut this.sims[active].1;
 
         sim.update(&input, &rule, &task_pool.0);
 

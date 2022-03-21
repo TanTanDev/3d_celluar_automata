@@ -13,6 +13,8 @@ pub trait Sim: Send + Sync {
         data: &mut Vec<InstanceData>);
 
     fn reset(&mut self, rule: &Rule);
+
+    fn cell_count(&self) -> usize;
 }
 
 
@@ -20,3 +22,4 @@ pub mod sims;
 pub use sims::*;
 
 pub mod tantan;
+pub mod leddoo;
