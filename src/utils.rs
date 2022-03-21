@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use bevy::{
-    math::{ivec3, IVec3},
+    math::{ivec3, IVec3, Vec4},
     prelude::Color,
 };
 use rand::Rng;
@@ -62,15 +62,8 @@ pub fn spawn_noise_small(states: &mut HashMap<IVec3, CellState>, rule: &Rule) {
 }
 
 pub fn lerp_color(color_1: Color, color_2: Color, dt: f32) -> Color {
-    let color_1 = color_1.as_rgba_f32();
-    let color_2 = color_2.as_rgba_f32();
-    let dt = dt.max(0.0).min(1.0);
-    let inv = 1.0 - dt;
-    let lerped = [
-        color_1[0] * dt + color_2[0] * inv,
-        color_1[1] * dt + color_2[1] * inv,
-        color_1[2] * dt + color_2[2] * inv,
-        color_1[3] * dt + color_2[3] * inv,
-    ];
-    Color::rgba(lerped[0], lerped[1], lerped[2], lerped[3])
+    let color_1: Vec4 = color_1.into();
+    let color_2: Vec4 = color_2.into();
+    let dt = dt.clamp(0.0, 1.0);
+    ((1.0 - dt)*color_1 + dt*color_2).into()
 }
