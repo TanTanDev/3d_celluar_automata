@@ -141,6 +141,9 @@ fn setup(
     sims.add_sim("leddoo multi-threaded".into(),
         Box::new(cells::leddoo::LeddooMultiThreaded::new()));
 
+    sims.add_sim("leddoo atomic".into(),
+        Box::new(cells::leddoo::LeddooAtomic::new()));
+
 
     commands.spawn().insert_bundle((
         meshes.add(Mesh::from(shape::Cube { size: 1.0 })),

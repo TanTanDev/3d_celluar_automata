@@ -7,6 +7,9 @@ pub use single_threaded::*;
 mod multi_threaded;
 pub use multi_threaded::*;
 
+mod atomic;
+pub use atomic::*;
+
 
 
 
@@ -47,5 +50,68 @@ impl<Cell> Chunk<Cell> {
         pos.x - offset <= 0 || pos.x + offset >= CHUNK_SIZE as i32 - 1 ||
         pos.y - offset <= 0 || pos.y + offset >= CHUNK_SIZE as i32 - 1 ||
         pos.z - offset <= 0 || pos.z + offset >= CHUNK_SIZE as i32 - 1
+    }
+}
+
+
+struct Chunks<Cell> {
+    chunks: Vec<Chunk<Cell>>,
+    chunk_radius: usize,
+    chunk_count:  usize,
+}
+
+impl<Cell> Chunks<Cell> {
+    pub fn new() -> Chunks<Cell> {
+        Chunks {
+            chunks: vec![],
+            chunk_radius: 0,
+            chunk_count:  0,
+        }
+    }
+
+    pub fn size(&self) -> usize {
+        self.chunk_radius * CHUNK_SIZE
+    }
+
+
+    fn index_to_pos_ex(index: usize, chunk_radius: usize) -> IVec3 {
+        let chunk      = index_to_chunk_index(index);
+        let offset     = index_to_chunk_offset(index);
+        let chunk_vec  = utils::index_to_pos(chunk, chunk_radius as i32);
+        let offset_vec = Chunk::<Cell>::index_to_pos(offset);
+
+        (CHUNK_SIZE as i32 * chunk_vec) + offset_vec
+    }
+
+    fn pos_to_index_ex(vec: IVec3, chunk_radius: usize) -> usize {
+        let chunk_vec  = vec / CHUNK_SIZE as i32;
+        let offset_vec = vec % CHUNK_SIZE as i32;
+
+        let chunk  = utils::pos_to_index(chunk_vec, chunk_radius as i32);
+        let offset = Chunk::<Cell>::pos_to_index(offset_vec);
+        chunk*CHUNK_CELL_COUNT + offset
+    }
+
+    fn index_to_pos(&self, index: usize) -> IVec3 {
+        Chunks::<Cell>::index_to_pos_ex(index, self.chunk_radius)
+    }
+
+    fn pos_to_index(&self, pos: IVec3) -> usize {
+        Chunks::<Cell>::pos_to_index_ex(pos, self.chunk_radius)
+    }
+}
+
+impl<Cell: Default> Chunks<Cell> {
+    pub fn set_size(&mut self, new_size: usize) -> usize {
+        let radius = (new_size + CHUNK_SIZE - 1) / CHUNK_SIZE;
+
+        if radius != self.chunk_radius {
+            let count = radius*radius*radius;
+            self.chunks.resize_with(count, || Chunk::default());
+            self.chunk_radius = radius;
+            self.chunk_count  = count;
+        }
+
+        self.size()
     }
 }

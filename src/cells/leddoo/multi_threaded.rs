@@ -14,7 +14,7 @@ use crate::{
 };
 
 use super::{
-    CHUNK_SIZE, CHUNK_CELL_COUNT,
+    CHUNK_CELL_COUNT,
     index_to_chunk_index, index_to_chunk_offset,
 };
 
@@ -33,38 +33,24 @@ impl Cell {
 }
 
 
-type Chunk = super::Chunk<Cell>;
+type Chunk  = super::Chunk<Cell>;
+type Chunks = super::Chunks<Cell>;
 
 pub struct LeddooMultiThreaded {
-    chunks: Vec<Chunk>,
-    chunk_radius: usize,
-    chunk_count: usize,
+    chunks: Chunks,
 }
 
 impl LeddooMultiThreaded {
     pub fn new() -> Self {
-        LeddooMultiThreaded {
-            chunks: vec![],
-            chunk_radius: 0,
-            chunk_count: 0,
-        }
+        LeddooMultiThreaded { chunks: Chunks::new() }
     }
 
     pub fn set_size(&mut self, new_size: usize) -> usize {
-        let radius = (new_size + CHUNK_SIZE - 1) / CHUNK_SIZE;
-
-        if radius != self.chunk_radius {
-            let count = radius*radius*radius;
-            self.chunks.resize_with(count, || Chunk::default());
-            self.chunk_radius = radius;
-            self.chunk_count  = count;
-        }
-
-        self.size()
+        self.chunks.set_size(new_size)
     }
 
     pub fn size(&self) -> usize {
-        self.chunk_radius * CHUNK_SIZE
+        self.chunks.size()
     }
 
     pub fn center(&self) -> IVec3 {
@@ -74,7 +60,7 @@ impl LeddooMultiThreaded {
 
     pub fn cell_count(&self) -> usize {
         let mut result = 0;
-        for chunk in &self.chunks {
+        for chunk in &self.chunks.chunks {
             for cell in chunk.0.iter() {
                 if !cell.is_dead() {
                     result += 1;
@@ -84,24 +70,6 @@ impl LeddooMultiThreaded {
         result
     }
 
-
-    fn index_to_vec(&self, index: usize) -> IVec3 {
-        let chunk      = index_to_chunk_index(index);
-        let offset     = index_to_chunk_offset(index);
-        let chunk_vec  = utils::index_to_pos(chunk, self.chunk_radius as i32);
-        let offset_vec = Chunk::index_to_pos(offset);
-
-        (CHUNK_SIZE as i32 * chunk_vec) + offset_vec
-    }
-
-    fn vec_to_index(&self, vec: IVec3) -> usize {
-        let chunk_vec  = vec / CHUNK_SIZE as i32;
-        let offset_vec = vec % CHUNK_SIZE as i32;
-
-        let chunk  = utils::pos_to_index(chunk_vec, self.chunk_radius as i32);
-        let offset = Chunk::pos_to_index(offset_vec);
-        chunk*CHUNK_CELL_COUNT + offset
-    }
 
     fn wrap(&self, pos: IVec3) -> IVec3 {
         utils::wrap(pos, self.size() as i32)
@@ -124,11 +92,11 @@ impl LeddooMultiThreaded {
     }
 
     fn update_neighbors(&self, chunks: &mut Vec<Chunk>, rule: &Rule, index: usize, inc: bool) {
-        let pos = self.index_to_vec(index);
+        let pos = self.chunks.index_to_pos(index);
         for dir in rule.neighbour_method.get_neighbour_iter() {
             let neighbor_pos = self.wrap(pos + *dir);
 
-            let index  = self.vec_to_index(neighbor_pos);
+            let index  = self.chunks.pos_to_index(neighbor_pos);
             let chunk  = index_to_chunk_index(index);
             let offset = index_to_chunk_offset(index);
             if inc {
@@ -178,7 +146,7 @@ impl LeddooMultiThreaded {
     pub fn update(&mut self, rule: &Rule, tasks: &TaskPool) {
         self.set_size(rule.bounding_size as usize);
 
-        let mut chunks = std::mem::take(&mut self.chunks);
+        let mut chunks = std::mem::take(&mut self.chunks.chunks);
 
         // update values.
         let mut value_tasks = vec![];
@@ -247,38 +215,38 @@ impl LeddooMultiThreaded {
             self.update_neighbors(&mut chunks, rule, index, false);
         }
 
-        self.chunks = chunks;
+        self.chunks.chunks = chunks;
     }
 
 
     // TEMP: move to sims.
     #[allow(dead_code)]
     pub fn validate(&self, rule: &Rule) {
-        for index in 0..self.chunk_count*CHUNK_CELL_COUNT {
-            let pos = self.index_to_vec(index);
+        for index in 0..self.chunks.chunk_count*CHUNK_CELL_COUNT {
+            let pos = self.chunks.index_to_pos(index);
 
             let mut neighbors = 0;
             for dir in rule.neighbour_method.get_neighbour_iter() {
                 let neighbour_pos = self.wrap(pos + *dir);
 
-                let index  = self.vec_to_index(neighbour_pos);
+                let index  = self.chunks.pos_to_index(neighbour_pos);
                 let chunk  = index_to_chunk_index(index);
                 let offset = index_to_chunk_offset(index);
-                if self.chunks[chunk].0[offset].value == rule.states {
+                if self.chunks.chunks[chunk].0[offset].value == rule.states {
                     neighbors += 1;
                 }
             }
 
             let chunk  = index_to_chunk_index(index);
             let offset = index_to_chunk_offset(index);
-            assert_eq!(neighbors, self.chunks[chunk].0[offset].neighbours);
+            assert_eq!(neighbors, self.chunks.chunks[chunk].0[offset].neighbours);
         }
     }
 
     pub fn spawn_noise(&mut self, rule: &Rule) {
-        let mut chunks = std::mem::take(&mut self.chunks);
+        let mut chunks = std::mem::take(&mut self.chunks.chunks);
         utils::make_some_noise_default(self.center(), |pos| {
-            let index  = self.vec_to_index(self.wrap(pos));
+            let index  = self.chunks.pos_to_index(self.wrap(pos));
             let chunk  = index_to_chunk_index(index);
             let offset = index_to_chunk_offset(index);
             let cell = &mut chunks[chunk].0[offset];
@@ -287,7 +255,7 @@ impl LeddooMultiThreaded {
                 self.update_neighbors(&mut chunks, rule, index, true);
             }
         });
-        self.chunks = chunks;
+        self.chunks.chunks = chunks;
     }
 }
 
@@ -302,13 +270,13 @@ impl crate::cells::Sim for LeddooMultiThreaded {
     }
 
     fn render(&self, rule: &Rule, data: &mut Vec<InstanceData>) {
-        for (chunk_index, chunk) in self.chunks.iter().enumerate() {
+        for (chunk_index, chunk) in self.chunks.chunks.iter().enumerate() {
             for (index, cell) in chunk.0.iter().enumerate() {
                 if cell.is_dead() {
                     continue;
                 }
 
-                let pos = self.index_to_vec(chunk_index*CHUNK_CELL_COUNT + index);
+                let pos = self.chunks.index_to_pos(chunk_index*CHUNK_CELL_COUNT + index);
                 data.push(InstanceData {
                     position: (pos - self.center()).as_vec3(),
                     scale: 1.0,
