@@ -1,6 +1,8 @@
 use bevy::prelude::Color;
 use std::ops::RangeInclusive;
 
+use bevy::math::{ivec3, IVec3};
+
 use crate::{neighbours::NeighbourMethod, utils};
 
 #[derive(Clone, Copy)]
@@ -23,8 +25,13 @@ impl Value {
         result
     }
 
+    #[allow(dead_code)]
     pub fn in_range(&self, value: u8) -> bool {
         self.0[value as usize]
+    }
+
+    pub fn in_range_incorrect(&self, value: u8) -> bool {
+        *self.0.get(value as usize).unwrap_or(&false)
     }
 }
 
@@ -75,9 +82,13 @@ impl Rule {
         RangeInclusive<i32>,
         RangeInclusive<i32>,
     ) {
-        let x_range = -self.bounding_size..=self.bounding_size;
-        let y_range = -self.bounding_size..=self.bounding_size;
-        let z_range = -self.bounding_size..=self.bounding_size;
+        let x_range = 0..=self.bounding_size-1;
+        let y_range = 0..=self.bounding_size-1;
+        let z_range = 0..=self.bounding_size-1;
         (x_range, y_range, z_range)
+    }
+
+    pub fn center(&self) -> IVec3 {
+        ivec3(self.bounding_size, self.bounding_size, self.bounding_size) / 2
     }
 }

@@ -2,18 +2,22 @@ use bevy::{prelude::*, render::view::NoFrustumCulling};
 use cell_event::CellStatesChangedEvent;
 pub mod cell_event;
 mod cell_renderer;
-mod cells_multithreaded;
-mod cells_single_threaded;
 mod neighbours;
 mod rotating_camera;
 mod rule;
 mod utils;
 use cell_renderer::*;
-//use cells_multithreaded::*;
-use cells_single_threaded::*;
 use neighbours::NeighbourMethod;
 use rotating_camera::{RotatingCamera, RotatingCameraPlugin};
 use rule::*;
+
+mod cells_single_threaded;
+#[allow(unused_imports)]
+use cells_single_threaded::*;
+
+mod cells_multithreaded;
+#[allow(unused_imports)]
+use cells_multithreaded::*;
 
 #[derive(Debug)]
 pub struct CellState {
@@ -34,7 +38,7 @@ impl CellState {
 
 fn main() {
     let mut rule = Rule {
-        bounding_size: 25,
+        bounding_size: 50,
 
         // builder
         survival_rule: Value::new(&[2, 6, 9]),
@@ -139,8 +143,8 @@ fn main() {
         .add_plugin(CellMaterialPlugin)
         .insert_resource(rule)
         // you can swap out the different implementations
-        //.add_plugin(CellsMultithreadedPlugin)
         .add_plugin(CellsSinglethreadedPlugin)
+        //.add_plugin(CellsMultithreadedPlugin)
         .add_startup_system(setup)
         .run();
 }

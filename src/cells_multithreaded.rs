@@ -13,7 +13,7 @@ use crate::{
     cell_renderer::{InstanceData, InstanceMaterialData},
     rotating_camera::UpdateEvent,
     rule::Rule,
-    utils::{self, keep_in_bounds},
+    utils,
     CellState,
 };
 
@@ -71,8 +71,8 @@ impl ProcessStep {
 }
 
 impl CellsMultithreaded {
-    pub fn new(rule: &Rule) -> Self {
-        let s = CellsMultithreaded {
+    pub fn new() -> Self {
+        CellsMultithreaded {
             states: Arc::new(RwLock::new(HashMap::new())),
             neighbours: Arc::new(RwLock::new(HashMap::new())),
             changes: HashMap::new(),
@@ -84,9 +84,7 @@ impl CellsMultithreaded {
             position_thread_cache: Vec::new(),
             change_results_cache: Vec::new(),
             neighbour_results_cache: Vec::new(),
-        };
-        utils::spawn_noise_small(&mut s.states.write().unwrap(), rule);
-        s
+        }
     }
 
     pub fn ready(&mut self) {
@@ -231,8 +229,7 @@ impl CellsMultithreaded {
                         if cell.value == rule_states {
                             // get neighbouring cells and increment
                             for dir in neighbour_method.get_neighbour_iter() {
-                                let mut neighbour_pos = *cell_pos + *dir;
-                                keep_in_bounds(rule_bounding, &mut neighbour_pos);
+                                let neighbour_pos = utils::wrap(*cell_pos + *dir, rule_bounding);
                                 result_cache.push(neighbour_pos);
                             }
                         }
@@ -281,13 +278,13 @@ impl CellsMultithreaded {
                 let states = state_rc_clone.read().unwrap();
                 let neighbours = neighbours_rc_clone.read().unwrap();
                 for cell_pos in position_cache.iter() {
-                    let neighbours = match neighbours.get(&cell_pos) {
+                    let neighbours = match neighbours.get(cell_pos) {
                         Some(n) => *n,
                         None => 0,
                     };
-                    match states.get(&cell_pos) {
+                    match states.get(cell_pos) {
                         Some(cell) => {
-                            if !(rule_survival_rule.in_range(neighbours)
+                            if !(rule_survival_rule.in_range_incorrect(neighbours)
                                 && cell.value == rule_start_state_value)
                             {
                                 change_results_cache.push((*cell_pos, StateChange::Decay));
@@ -295,14 +292,8 @@ impl CellsMultithreaded {
                         }
                         None => {
                             // check if should spawn
-                            if rule_birth_rule.in_range(neighbours) {
-                                if cell_pos.x >= -rule_bounding
-                                    && cell_pos.x <= rule_bounding
-                                    && cell_pos.y >= -rule_bounding
-                                    && cell_pos.y <= rule_bounding
-                                    && cell_pos.z >= -rule_bounding
-                                    && cell_pos.z <= rule_bounding
-                                {
+                            if rule_birth_rule.in_range_incorrect(neighbours) {
+                                if utils::is_in_bounds(*cell_pos, rule_bounding) {
                                     change_results_cache
                                         .push((*cell_pos, StateChange::Spawn { neighbours }));
                                 }
@@ -347,7 +338,7 @@ impl CellsMultithreaded {
         // update instance buffer
         let mut instance_data = Vec::with_capacity(states.len());
         for cell in states.iter() {
-            let pos = cell.0;
+            let pos = *cell.0 - rule.center();
             instance_data.push(InstanceData {
                 position: vec3(pos.x as f32, pos.y as f32, pos.z as f32),
                 scale: 1.0,
@@ -398,16 +389,23 @@ fn spawn_noise(
     if cells.is_busy() {
         return;
     }
-    utils::spawn_noise(&mut cells.states.write().unwrap(), &rule);
+
+    {
+        let states = &mut cells.states.write().unwrap();
+        utils::make_some_noise_default(rule.center(), |pos| {
+            let dist = utils::dist_to_center(pos, &rule);
+            states.insert(pos, CellState::new(rule.states, 0, dist));
+        });
+    }
+
     cells.ready();
 }
 
 pub struct CellsMultithreadedPlugin;
 impl Plugin for CellsMultithreadedPlugin {
     fn build(&self, app: &mut bevy::prelude::App) {
-        let rule = app.world.get_resource::<Rule>().unwrap();
-        let cells_singlethreaded = CellsMultithreaded::new(&rule);
-        app.insert_resource(cells_singlethreaded)
+        let cells = CellsMultithreaded::new();
+        app.insert_resource(cells)
             .add_system(prepare_cell_data)
             .add_system(spawn_noise)
             .add_system(tick_cell);

@@ -10,7 +10,7 @@ use crate::{
     cell_renderer::{InstanceData, InstanceMaterialData},
     rotating_camera::UpdateEvent,
     rule::Rule,
-    utils::{self, keep_in_bounds},
+    utils,
     CellState,
 };
 
@@ -44,8 +44,7 @@ impl CellsSinglethreaded {
             if cell.value == rule.states {
                 // get neighbouring cells and increment
                 for dir in rule.neighbour_method.get_neighbour_iter() {
-                    let mut neighbour_pos = *cell_pos + *dir;
-                    keep_in_bounds(rule.bounding_size, &mut neighbour_pos);
+                    let neighbour_pos = utils::wrap(*cell_pos + *dir, rule.bounding_size);
                     if !self.neighbours.contains_key(&neighbour_pos) {
                         self.neighbours.insert(neighbour_pos, 0);
                     }
@@ -68,7 +67,7 @@ impl CellsSinglethreaded {
                     };
                     match self.states.get(&cell_pos) {
                         Some(cell) => {
-                            if !(rule.survival_rule.in_range(neighbours)
+                            if !(rule.survival_rule.in_range_incorrect(neighbours)
                                 && cell.value == rule.states)
                             {
                                 self.changes.insert(cell_pos, -1i32);
@@ -76,16 +75,9 @@ impl CellsSinglethreaded {
                         }
                         None => {
                             // check if should spawn
-                            if rule.birth_rule.in_range(neighbours) {
-                                if cell_pos.x >= -rule.bounding_size
-                                    && cell_pos.x <= rule.bounding_size
-                                    && cell_pos.y >= -rule.bounding_size
-                                    && cell_pos.y <= rule.bounding_size
-                                    && cell_pos.z >= -rule.bounding_size
-                                    && cell_pos.z <= rule.bounding_size
-                                {
-                                    self.spawn.push((cell_pos, neighbours));
-                                }
+                            if rule.birth_rule.in_range_incorrect(neighbours) {
+                                // cell_pos is in bounds, because we iterate over the bounds.
+                                self.spawn.push((cell_pos, neighbours));
                             }
                         }
                     }
@@ -143,7 +135,12 @@ fn spawn_noise(
     if !keyboard_input.just_pressed(KeyCode::P) {
         return;
     }
-    utils::spawn_noise(&mut cells.states, &rule);
+
+    let states = &mut cells.states;
+    utils::make_some_noise_default(rule.center(), |pos| {
+        let dist = utils::dist_to_center(pos, &rule);
+        states.insert(pos, CellState::new(rule.states, 0, dist));
+    });
 }
 
 pub struct CellsSinglethreadedPlugin;
@@ -166,7 +163,7 @@ fn prepare_cell_data(
     let mut instance_data = query.iter_mut().next().unwrap();
     instance_data.0.clear();
     for cell in cells.states.iter() {
-        let pos = cell.0;
+        let pos = *cell.0 - rule.center();
         instance_data.0.push(InstanceData {
             position: vec3(pos.x as f32, pos.y as f32, pos.z as f32),
             scale: 1.0,
