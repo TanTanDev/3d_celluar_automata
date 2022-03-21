@@ -75,9 +75,7 @@ pub struct Rule {
 }
 
 impl Rule {
-    pub(crate) fn get_bounding_ranges(
-        &self,
-    ) -> (
+    pub fn get_bounding_ranges(&self) -> (
         RangeInclusive<i32>,
         RangeInclusive<i32>,
         RangeInclusive<i32>,
@@ -89,6 +87,7 @@ impl Rule {
     }
 
     pub fn center(&self) -> IVec3 {
-        ivec3(self.bounding_size, self.bounding_size, self.bounding_size) / 2
+        let center = self.bounding_size/2;
+        ivec3(center, center, center)
     }
 }

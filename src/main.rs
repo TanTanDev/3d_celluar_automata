@@ -11,30 +11,8 @@ use neighbours::NeighbourMethod;
 use rotating_camera::{RotatingCamera, RotatingCameraPlugin};
 use rule::*;
 
-mod cells_single_threaded;
-#[allow(unused_imports)]
-use cells_single_threaded::*;
-
-mod cells_multithreaded;
-#[allow(unused_imports)]
-use cells_multithreaded::*;
-
-#[derive(Debug)]
-pub struct CellState {
-    value: u8,
-    neighbours: u8,
-    dist_to_center: f32,
-}
-
-impl CellState {
-    pub fn new(value: u8, neighbours: u8, dist_to_center: f32) -> Self {
-        CellState {
-            value,
-            neighbours,
-            dist_to_center,
-        }
-    }
-}
+mod cells;
+use cells::*;
 
 fn main() {
     let mut rule = Rule {

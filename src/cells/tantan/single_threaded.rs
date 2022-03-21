@@ -11,8 +11,9 @@ use crate::{
     rotating_camera::UpdateEvent,
     rule::Rule,
     utils,
-    CellState,
 };
+
+use super::CellState;
 
 struct CellsSinglethreaded {
     states: HashMap<IVec3, CellState>,

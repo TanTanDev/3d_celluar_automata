@@ -14,8 +14,9 @@ use crate::{
     rotating_camera::UpdateEvent,
     rule::Rule,
     utils,
-    CellState,
 };
+
+use super::CellState;
 
 struct CellsMultithreaded {
     states: Arc<RwLock<HashMap<IVec3, CellState>>>,
