@@ -44,3 +44,19 @@ pub fn lerp_color(color_1: Color, color_2: Color, dt: f32) -> Color {
     let dt = dt.clamp(0.0, 1.0);
     ((1.0 - dt)*color_1 + dt*color_2).into()
 }
+
+
+pub fn index_to_pos(index: usize, bound: i32) -> IVec3 {
+    ivec3(
+        index as i32 % bound,
+        index as i32 / bound % bound,
+        index as i32 / bound / bound)
+}
+
+pub fn pos_to_index(pos: IVec3, bound: i32) -> usize {
+    let x = pos.x as usize;
+    let y = pos.y as usize;
+    let z = pos.z as usize;
+    let bound = bound as usize;
+    x + y*bound + z*bound*bound
+}
