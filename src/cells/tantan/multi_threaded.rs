@@ -3,22 +3,21 @@ use std::{collections::HashMap, sync::Mutex};
 use bevy::{
     input::Input,
     math::{vec3, IVec3},
-    prelude::{EventWriter, KeyCode, Plugin, Query, Res, ResMut},
-    tasks::{AsyncComputeTaskPool, Task},
+    prelude::{KeyCode},
+    tasks::{TaskPool, Task},
 };
 use futures_lite::future;
 use std::sync::{Arc, RwLock};
 
 use crate::{
-    cell_renderer::{InstanceData, InstanceMaterialData},
-    rotating_camera::UpdateEvent,
+    cell_renderer::{InstanceData},
     rule::Rule,
     utils,
 };
 
 use super::CellState;
 
-struct CellsMultithreaded {
+pub struct CellsMultithreaded {
     states: Arc<RwLock<HashMap<IVec3, CellState>>>,
 
     // cached data used for calculating state
@@ -30,9 +29,6 @@ struct CellsMultithreaded {
     neighbour_results_cache: Vec<Arc<Mutex<Vec<IVec3>>>>,
 
     position_thread_cache: Vec<Arc<Mutex<Vec<IVec3>>>>,
-
-    // the instance buffer data
-    instance_material_data: Option<Vec<InstanceData>>,
 }
 
 pub enum StateChange {
@@ -50,14 +46,13 @@ impl CellsMultithreaded {
             neighbours: Arc::new(RwLock::new(HashMap::new())),
             changes: HashMap::new(),
             change_mask: HashMap::new(),
-            instance_material_data: None,
             position_thread_cache: Vec::new(),
             change_results_cache: Vec::new(),
             neighbour_results_cache: Vec::new(),
         }
     }
 
-    pub fn tick(&mut self, rule: &Rule, task_pool: &AsyncComputeTaskPool) {
+    pub fn tick(&mut self, rule: &Rule, task_pool: &TaskPool) {
         // neighbours
         {
             let neighbour_tasks = self.calculate_neighbours(rule, task_pool);
@@ -121,7 +116,7 @@ impl CellsMultithreaded {
         }
     }
 
-    pub fn calculate_neighbours(&mut self, rule: &Rule, task_pool: &AsyncComputeTaskPool)
+    pub fn calculate_neighbours(&mut self, rule: &Rule, task_pool: &TaskPool)
         -> Vec<Task<()>>
     {
         let states = self.states.read().unwrap();
@@ -178,7 +173,7 @@ impl CellsMultithreaded {
         tasks
     }
 
-    pub fn calculate_changes(&mut self, rule: &Rule, task_pool: &AsyncComputeTaskPool)
+    pub fn calculate_changes(&mut self, rule: &Rule, task_pool: &TaskPool)
         -> Vec<Task<()>>
     {
         let job_count = task_pool.thread_num();
@@ -278,11 +273,33 @@ impl CellsMultithreaded {
         // remove dead
         states.retain(|_, c| c.value > 0);
 
-        // update instance buffer
-        let mut instance_data = Vec::with_capacity(states.len());
+        // ALL calculations are done, reset cached data
+        self.changes.clear();
+        // self.change_mask.clear();
+        self.change_mask.iter_mut().for_each(|m| *m.1 = false);
+        self.neighbours.write().unwrap().clear();
+    }
+}
+
+
+impl crate::cells::Sim for CellsMultithreaded {
+    fn update(&mut self, input: &Input<KeyCode>, rule: &Rule, task_pool: &TaskPool) {
+        if input.just_pressed(KeyCode::P) {
+            let states = &mut self.states.write().unwrap();
+            utils::make_some_noise_default(rule.center(), |pos| {
+                let dist = utils::dist_to_center(pos, &rule);
+                states.insert(pos, CellState::new(rule.states, 0, dist));
+            });
+        }
+
+        self.tick(&rule, &task_pool);
+    }
+
+    fn render(&self, rule: &Rule, data: &mut Vec<InstanceData>) {
+        let states = self.states.read().unwrap();
         for cell in states.iter() {
             let pos = *cell.0 - rule.center();
-            instance_data.push(InstanceData {
+            data.push(InstanceData {
                 position: vec3(pos.x as f32, pos.y as f32, pos.z as f32),
                 scale: 1.0,
                 color: rule
@@ -294,74 +311,11 @@ impl CellsMultithreaded {
                         cell.1.dist_to_center,
                     )
                     .as_rgba_f32(),
-                //color: Color::rgba(cell.1.value as f32 / rule.states as f32, 0.0, 0.0, 1.0)
-                //    .as_rgba_f32(),
             });
         }
-        self.instance_material_data = Some(instance_data);
-
-        // ALL calculations are done, reset cached data
-        self.changes.clear();
-        // self.change_mask.clear();
-        self.change_mask.iter_mut().for_each(|m| *m.1 = false);
-        self.neighbours.write().unwrap().clear();
-    }
-}
-
-fn tick_cell(
-    rule: Res<Rule>,
-    mut cells: ResMut<CellsMultithreaded>,
-    keyboard_input: Res<Input<KeyCode>>,
-    task_pool: Res<AsyncComputeTaskPool>,
-) {
-    if keyboard_input.pressed(KeyCode::E) {
-        cells.tick(&rule, &task_pool);
-        return;
-    }
-}
-
-fn spawn_noise(
-    rule: Res<Rule>,
-    mut cells: ResMut<CellsMultithreaded>,
-    keyboard_input: Res<Input<KeyCode>>,
-    task_pool: Res<AsyncComputeTaskPool>,
-) {
-    if !keyboard_input.pressed(KeyCode::P) {
-        return;
     }
 
-    {
-        let states = &mut cells.states.write().unwrap();
-        utils::make_some_noise_default(rule.center(), |pos| {
-            let dist = utils::dist_to_center(pos, &rule);
-            states.insert(pos, CellState::new(rule.states, 0, dist));
-        });
-    }
-
-    cells.tick(&rule, &task_pool);
-}
-
-pub struct CellsMultithreadedPlugin;
-impl Plugin for CellsMultithreadedPlugin {
-    fn build(&self, app: &mut bevy::prelude::App) {
-        let cells = CellsMultithreaded::new();
-        app.insert_resource(cells)
-            .add_system(prepare_cell_data)
-            .add_system(spawn_noise)
-            .add_system(tick_cell);
-    }
-}
-
-fn prepare_cell_data(
-    mut cells: ResMut<CellsMultithreaded>,
-    mut query: Query<&mut InstanceMaterialData>,
-    mut cell_event: EventWriter<UpdateEvent>,
-) {
-    // take the first
-    if let Some(mut instance_material_data) = cells.instance_material_data.take() {
-        let mut instance_data = query.iter_mut().next().unwrap();
-        instance_data.0.clear();
-        instance_data.0.append(&mut instance_material_data);
-        cell_event.send(UpdateEvent);
+    fn reset(&mut self, _rule: &Rule) {
+        *self = CellsMultithreaded::new();
     }
 }

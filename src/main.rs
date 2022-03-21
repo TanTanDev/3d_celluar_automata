@@ -12,7 +12,6 @@ use rotating_camera::{RotatingCamera, RotatingCameraPlugin};
 use rule::*;
 
 mod cells;
-use cells::*;
 
 fn main() {
     let mut rule = Rule {
@@ -120,14 +119,23 @@ fn main() {
         .add_plugin(RotatingCameraPlugin)
         .add_plugin(CellMaterialPlugin)
         .insert_resource(rule)
-        // you can swap out the different implementations
-        .add_plugin(CellsSinglethreadedPlugin)
-        //.add_plugin(CellsMultithreadedPlugin)
+        .add_plugin(cells::SimsPlugin)
         .add_startup_system(setup)
         .run();
 }
 
-fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {
+fn setup(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut sims: ResMut<cells::Sims>,
+) {
+    sims.add_sim("tantan single-threaded".into(),
+        Box::new(cells::tantan::CellsSinglethreaded::new()));
+
+    sims.add_sim("tantan multi-threaded".into(),
+        Box::new(cells::tantan::CellsMultithreaded::new()));
+
+
     commands.spawn().insert_bundle((
         meshes.add(Mesh::from(shape::Cube { size: 1.0 })),
         Transform::from_xyz(0.0, 0.0, 0.0),

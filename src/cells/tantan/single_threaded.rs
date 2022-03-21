@@ -1,21 +1,20 @@
 use std::collections::HashMap;
 
 use bevy::{
-    input::Input,
     math::{ivec3, vec3, IVec3},
-    prelude::{EventWriter, KeyCode, Plugin, Query, Res, ResMut},
+    prelude::{Input, KeyCode},
+    tasks::TaskPool,
 };
 
 use crate::{
-    cell_renderer::{InstanceData, InstanceMaterialData},
-    rotating_camera::UpdateEvent,
+    cell_renderer::{InstanceData},
     rule::Rule,
     utils,
 };
 
 use super::CellState;
 
-struct CellsSinglethreaded {
+pub struct CellsSinglethreaded {
     states: HashMap<IVec3, CellState>,
     // cached datta used for calculating state
     neighbours: HashMap<IVec3, u8>,
@@ -115,70 +114,41 @@ impl CellsSinglethreaded {
         self.neighbours.clear();
     }
 }
-fn tick_cell(
-    rule: Res<Rule>,
-    mut cells: ResMut<CellsSinglethreaded>,
-    keyboard_input: Res<Input<KeyCode>>,
-    mut cell_event: EventWriter<UpdateEvent>,
-) {
-    if !keyboard_input.pressed(KeyCode::E) {
-        return;
-    }
-    cells.tick(&rule);
-    cell_event.send(UpdateEvent);
-}
 
-fn spawn_noise(
-    rule: Res<Rule>,
-    mut cells: ResMut<CellsSinglethreaded>,
-    keyboard_input: Res<Input<KeyCode>>,
-) {
-    if !keyboard_input.just_pressed(KeyCode::P) {
-        return;
+
+impl crate::cells::Sim for CellsSinglethreaded {
+    fn update(&mut self, input: &Input<KeyCode>, rule: &Rule, _task_pool: &TaskPool) {
+        if input.just_pressed(KeyCode::P) {
+            utils::make_some_noise_default(rule.center(), |pos| {
+                let dist = utils::dist_to_center(pos, &rule);
+                self.states.insert(pos, CellState::new(rule.states, 0, dist));
+            });
+        }
+
+        self.tick(rule);
     }
 
-    let states = &mut cells.states;
-    utils::make_some_noise_default(rule.center(), |pos| {
-        let dist = utils::dist_to_center(pos, &rule);
-        states.insert(pos, CellState::new(rule.states, 0, dist));
-    });
-}
+    fn render(&self, rule: &Rule, data: &mut Vec<InstanceData>) {
+        for cell in self.states.iter() {
+            let pos = *cell.0 - rule.center();
+            data.push(InstanceData {
+                position: vec3(pos.x as f32, pos.y as f32, pos.z as f32),
+                scale: 1.0,
+                color: rule
+                    .color_method
+                    .color(
+                        rule.states,
+                        cell.1.value,
+                        cell.1.neighbours,
+                        cell.1.dist_to_center,
+                    )
+                    .as_rgba_f32(),
+            });
+        }
+    }
 
-pub struct CellsSinglethreadedPlugin;
-impl Plugin for CellsSinglethreadedPlugin {
-    fn build(&self, app: &mut bevy::prelude::App) {
-        let cells_singlethreaded = CellsSinglethreaded::new();
-        app.insert_resource(cells_singlethreaded)
-            .add_system(prepare_cell_data)
-            .add_system(spawn_noise)
-            .add_system(tick_cell);
+    fn reset(&mut self, _rule: &Rule) {
+        *self = CellsSinglethreaded::new();
     }
 }
 
-fn prepare_cell_data(
-    rule: Res<Rule>,
-    cells: Res<CellsSinglethreaded>,
-    mut query: Query<&mut InstanceMaterialData>,
-) {
-    // take the first
-    let mut instance_data = query.iter_mut().next().unwrap();
-    instance_data.0.clear();
-    for cell in cells.states.iter() {
-        let pos = *cell.0 - rule.center();
-        instance_data.0.push(InstanceData {
-            position: vec3(pos.x as f32, pos.y as f32, pos.z as f32),
-            scale: 1.0,
-            color: rule
-                .color_method
-                .color(
-                    rule.states,
-                    cell.1.value,
-                    cell.1.neighbours,
-                    cell.1.dist_to_center,
-                )
-                .as_rgba_f32(),
-            //color: Color::rgba(cell.1.value as f32 / rule.states as f32, 0.0, 0.0, 1.0)
-            //    .as_rgba_f32(),
-        });
-    }
-}
