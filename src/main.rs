@@ -33,78 +33,97 @@ impl CellState {
 }
 
 fn main() {
-    let rule = Rule {
+    let mut rule = Rule {
         bounding_size: 25,
 
         // builder
-        survival_rule: Value::Singles(vec![2, 6, 9]),
-        birth_rule: Value::Singles(vec![4, 6, 8, 9, 10]),
+        survival_rule: Value::new(&[2, 6, 9]),
+        birth_rule: Value::new(&[4, 6, 8, 9, 10]),
         states: 10,
         color_method: ColorMethod::DistToCenter(Color::YELLOW, Color::RED),
         neighbour_method: NeighbourMethod::Moore,
-        // VN pyramid
-        // survival_rule: Value::Range(0..=6),
-        // birth_rule: Value::Singles(vec![1,3]),
-        // states: 2,
-        // color_method: ColorMethod::DistToCenter(Color::GREEN, Color::BLUE),
-        // neighbour_method: NeighbourMethod::VonNeuman,
-
-        // fancy snancy
-        //survival_rule: Value::Singles(vec![0,1,2,3,7,8,9,11,13,18,21,22,24,26]),
-        //birth_rule: Value::Singles(vec![4,13,17,20,21,22,23,24,26]),
-        //states: 4,
-        //color_method: ColorMethod::StateLerp(Color::RED, Color::BLUE),
-        //neighbour_method: NeighbourMethod::Moore,
-
-        // pretty crystals
-        // survival_rule: Value::Singles(vec![5,6,7,8]),
-        // birth_rule: Value::Singles(vec![6,7,9]),
-        // states: 10,
-        // color_method: ColorMethod::DistToCenter(Color::GREEN, Color::BLUE),
-        //neighbour_method: NeighbourMethod::Moore,
-
-        // swapping structures
-        //survival_rule: Value::Singles(vec![3,6,9]),
-        //birth_rule: Value::Singles(vec![4,8,10]),
-        //states: 20,
-        //color_method: ColorMethod::StateLerp(Color::RED, Color::GREEN),
-        //neighbour_method: NeighbourMethod::Moore,
-
-        // slowly expanding blob
-        //survival_rule: Value::Range(9..=26),
-        //birth_rule: Value::Singles(vec![5,6,7,12,13,15]),
-        //states: 20,
-        //color_method: ColorMethod::StateLerp(Color::YELLOW, Color::BLUE),
-        //neighbour_method: NeighbourMethod::Moore,
-
-        // 445
-        //survival_rule: Value::Single(4),
-        //birth_rule: Value::Single(4),
-        //states: 5,
-        //color_method: ColorMethod::StateLerp(Color::BLACK, Color::RED),
-        //neighbour_method: NeighbourMethod::Moore,
-
-        // expand then die
-        //survival_rule: Value::Single(4),
-        //birth_rule: Value::Single(3),
-        //states: 20,
-        //color_method: ColorMethod::StateLerp(Color::BLACK, Color::RED),
-        //neighbour_method: NeighbourMethod::Moore,
-
-        // no idea what to call this
-        //survival_rule: Value::Singles(vec![6,7]),
-        //birth_rule: Value::Singles(vec![4,6,9,10,11]),
-        //states: 6,
-        //color_method: ColorMethod::StateLerp(Color::BLUE, Color::RED),
-        //neighbour_method: NeighbourMethod::Moore,
-
-        // LARGE LINES
-        //survival_rule: Value::Singles(vec![5]),
-        //birth_rule: Value::Singles(vec![4, 6, 9, 10, 11, 16, 17, 18, 19, 20, 21, 22, 23, 24]),
-        //states: 35,
-        //color_method: ColorMethod::StateLerp(Color::BLUE, Color::RED),
-        //neighbour_method: NeighbourMethod::Moore,
     };
+
+    // VN pyramid
+    if 0 == 1 {
+        rule.survival_rule = Value::from_range(0..=6);
+        rule.birth_rule = Value::new(&[1,3]);
+        rule.states = 2;
+        rule.color_method = ColorMethod::DistToCenter(Color::GREEN, Color::BLUE);
+        rule.neighbour_method = NeighbourMethod::VonNeuman;
+    }
+
+    // fancy snancy
+    if 0 == 1 {
+        rule.survival_rule = Value::new(&[0,1,2,3,7,8,9,11,13,18,21,22,24,26]);
+        rule.birth_rule = Value::new(&[4,13,17,20,21,22,23,24,26]);
+        rule.states = 4;
+        rule.color_method = ColorMethod::StateLerp(Color::RED, Color::BLUE);
+        rule.neighbour_method = NeighbourMethod::Moore;
+    }
+
+    // pretty crystals
+    if 0 == 1 {
+        rule.survival_rule = Value::new(&[5,6,7,8]);
+        rule.birth_rule = Value::new(&[6,7,9]);
+        rule.states = 10;
+        rule.color_method = ColorMethod::DistToCenter(Color::GREEN, Color::BLUE);
+        rule.neighbour_method = NeighbourMethod::Moore;
+    }
+
+    // swapping structures
+    if 0 == 1 {
+        rule.survival_rule = Value::new(&[3,6,9]);
+        rule.birth_rule = Value::new(&[4,8,10]);
+        rule.states = 20;
+        rule.color_method = ColorMethod::StateLerp(Color::RED, Color::GREEN);
+        rule.neighbour_method = NeighbourMethod::Moore;
+    }
+
+    // slowly expanding blob
+    if 0 == 1 {
+        rule.survival_rule = Value::from_range(9..=26);
+        rule.birth_rule = Value::new(&[5,6,7,12,13,15]);
+        rule.states = 20;
+        rule.color_method = ColorMethod::StateLerp(Color::YELLOW, Color::BLUE);
+        rule.neighbour_method = NeighbourMethod::Moore;
+    }
+
+    // 445
+    if 0 == 1 {
+        rule.survival_rule = Value::new(&[4]);
+        rule.birth_rule = Value::new(&[4]);
+        rule.states = 5;
+        rule.color_method = ColorMethod::StateLerp(Color::BLACK, Color::RED);
+        rule.neighbour_method = NeighbourMethod::Moore;
+    }
+
+    // expand then die
+    if 0 == 1 {
+        rule.survival_rule = Value::new(&[4]);
+        rule.birth_rule = Value::new(&[3]);
+        rule.states = 20;
+        rule.color_method = ColorMethod::StateLerp(Color::BLACK, Color::RED);
+        rule.neighbour_method = NeighbourMethod::Moore;
+    }
+
+    // no idea what to call this
+    if 0 == 1 {
+        rule.survival_rule = Value::new(&[6,7]);
+        rule.birth_rule = Value::new(&[4,6,9,10,11]);
+        rule.states = 6;
+        rule.color_method = ColorMethod::StateLerp(Color::BLUE, Color::RED);
+        rule.neighbour_method = NeighbourMethod::Moore;
+    }
+
+    // LARGE LINES
+    if 0 == 1 {
+        rule.survival_rule = Value::new(&[5]);
+        rule.birth_rule = Value::new(&[4, 6, 9, 10, 11, 16, 17, 18, 19, 20, 21, 22, 23, 24]);
+        rule.states = 35;
+        rule.color_method = ColorMethod::StateLerp(Color::BLUE, Color::RED);
+        rule.neighbour_method = NeighbourMethod::Moore;
+    }
 
     let mut task_pool_settings = DefaultTaskPoolOptions::default();
     task_pool_settings.async_compute.percent = 1.0f32;

@@ -3,23 +3,31 @@ use std::ops::RangeInclusive;
 
 use crate::{neighbours::NeighbourMethod, utils};
 
-#[allow(dead_code)]
-#[derive(Clone)]
-pub enum Value {
-    Single(u8),
-    Range(RangeInclusive<u8>),
-    Singles(Vec<u8>),
-}
+#[derive(Clone, Copy)]
+pub struct Value ([bool; 27]);
 
 impl Value {
-    pub fn in_range(&self, value: u8) -> bool {
-        match self {
-            Value::Single(single) => value == *single,
-            Value::Range(range) => value < *range.end() && value > *range.start(),
-            Value::Singles(singles) => singles.iter().any(|v| *v == value),
+    pub fn new(indices: &[u8]) -> Self {
+        let mut result = Value([false; 27]);
+        for index in indices {
+            result.0[*index as usize] = true;
         }
+        result
+    }
+
+    pub fn from_range(indices: RangeInclusive<u8>) -> Self {
+        let mut result = Value([false; 27]);
+        for index in indices {
+            result.0[index as usize] = true;
+        }
+        result
+    }
+
+    pub fn in_range(&self, value: u8) -> bool {
+        self.0[value as usize]
     }
 }
+
 
 #[allow(dead_code)]
 #[derive(Clone)]
