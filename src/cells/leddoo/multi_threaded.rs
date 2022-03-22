@@ -45,16 +45,16 @@ impl LeddooMultiThreaded {
         LeddooMultiThreaded { chunks: Chunks::new() }
     }
 
-    pub fn set_size(&mut self, new_size: usize) -> usize {
-        self.chunks.set_size(new_size)
+    pub fn set_bounds(&mut self, new_bounds: i32) -> i32 {
+        self.chunks.set_bounds(new_bounds)
     }
 
-    pub fn size(&self) -> usize {
-        self.chunks.size()
+    pub fn bounds(&self) -> i32 {
+        self.chunks.bounds()
     }
 
     pub fn center(&self) -> IVec3 {
-        let center = (self.size() / 2) as i32;
+        let center = self.bounds() / 2;
         ivec3(center, center, center)
     }
 
@@ -72,7 +72,7 @@ impl LeddooMultiThreaded {
 
 
     fn wrap(&self, pos: IVec3) -> IVec3 {
-        utils::wrap(pos, self.size() as i32)
+        utils::wrap(pos, self.bounds())
     }
 
 
@@ -144,8 +144,6 @@ impl LeddooMultiThreaded {
 
 
     pub fn update(&mut self, rule: &Rule, tasks: &TaskPool) {
-        self.set_size(rule.bounding_size as usize);
-
         let mut chunks = std::mem::take(&mut self.chunks.chunks);
 
         // update values.
@@ -286,7 +284,7 @@ impl crate::cells::Sim for LeddooMultiThreaded {
                             rule.states,
                             cell.value,
                             cell.neighbours,
-                            utils::dist_to_center(pos, &rule),
+                            utils::dist_to_center(pos, self.bounds()),
                         )
                         .as_rgba_f32(),
                 });
@@ -300,6 +298,14 @@ impl crate::cells::Sim for LeddooMultiThreaded {
 
     fn cell_count(&self) -> usize {
         self.cell_count()
+    }
+
+    fn bounds(&self) -> i32 {
+        self.bounds()
+    }
+
+    fn set_bounds(&mut self, new_bounds: i32) -> i32 {
+        self.set_bounds(new_bounds)
     }
 }
 

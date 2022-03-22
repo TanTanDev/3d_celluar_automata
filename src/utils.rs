@@ -2,9 +2,9 @@ use bevy::{
     math::{ivec3, IVec3, Vec4},
     prelude::Color,
 };
+use std::ops::RangeInclusive;
 use rand::Rng;
 
-use crate::{rule::Rule};
 
 pub fn is_in_bounds(pos: IVec3, bounds: i32) -> bool {
     pos.x < bounds && pos.y < bounds && pos.z < bounds
@@ -17,9 +17,9 @@ pub fn wrap(pos: IVec3, bounds: i32) -> IVec3 {
     (pos + bounds) % bounds
 }
 
-pub fn dist_to_center(cell_pos: IVec3, rule: &Rule) -> f32 {
-    let cell_pos = cell_pos - rule.center();
-    let max = rule.bounding_size as f32 / 2.0;
+pub fn dist_to_center(cell_pos: IVec3, bounds: i32) -> f32 {
+    let cell_pos = cell_pos - center(bounds);
+    let max = bounds as f32 / 2.0;
     cell_pos.as_vec3().length() / max
 }
 
@@ -46,17 +46,32 @@ pub fn lerp_color(color_1: Color, color_2: Color, dt: f32) -> Color {
 }
 
 
-pub fn index_to_pos(index: usize, bound: i32) -> IVec3 {
+pub fn index_to_pos(index: usize, bounds: i32) -> IVec3 {
     ivec3(
-        index as i32 % bound,
-        index as i32 / bound % bound,
-        index as i32 / bound / bound)
+        index as i32 % bounds,
+        index as i32 / bounds % bounds,
+        index as i32 / bounds / bounds)
 }
 
-pub fn pos_to_index(pos: IVec3, bound: i32) -> usize {
+pub fn pos_to_index(pos: IVec3, bounds: i32) -> usize {
     let x = pos.x as usize;
     let y = pos.y as usize;
     let z = pos.z as usize;
-    let bound = bound as usize;
-    x + y*bound + z*bound*bound
+    let bounds = bounds as usize;
+    x + y*bounds + z*bounds*bounds
+}
+    
+
+pub fn get_bounding_ranges(bounds: i32)
+    -> (RangeInclusive<i32>, RangeInclusive<i32>, RangeInclusive<i32>)
+{
+    let x_range = 0..=bounds-1;
+    let y_range = 0..=bounds-1;
+    let z_range = 0..=bounds-1;
+    (x_range, y_range, z_range)
+}
+
+pub fn center(bounds: i32) -> IVec3 {
+    let center = bounds/2;
+    ivec3(center, center, center)
 }

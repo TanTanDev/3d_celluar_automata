@@ -63,18 +63,18 @@ impl LeddooAtomic {
         }
     }
 
-    pub fn set_size(&mut self, new_size: usize) -> usize {
+    pub fn set_bounds(&mut self, new_bounds: i32) -> i32 {
         let mut chunks = self.chunks.write().unwrap();
-        chunks.set_size(new_size)
+        chunks.set_bounds(new_bounds)
     }
 
-    pub fn size(&self) -> usize {
+    pub fn bounds(&self) -> i32 {
         let chunks = self.chunks.read().unwrap();
-        chunks.size()
+        chunks.bounds()
     }
 
     pub fn center(&self) -> IVec3 {
-        let center = (self.size() / 2) as i32;
+        let center = self.bounds() / 2;
         ivec3(center, center, center)
     }
 
@@ -153,8 +153,6 @@ impl LeddooAtomic {
     }
 
     pub fn update(&mut self, rule: &Rule, tasks: &TaskPool) {
-        self.set_size(rule.bounding_size as usize);
-
         let mut chunks = self.chunks.write().unwrap();
         let chunk_radius = chunks.chunk_radius;
 
@@ -218,14 +216,14 @@ impl LeddooAtomic {
     #[allow(dead_code)]
     fn validate(&self, rule: &Rule) {
         let chunks = self.chunks.read().unwrap();
-        let size = chunks.size();
+        let bounds = chunks.bounds();
 
         for index in 0..chunks.chunk_count*CHUNK_CELL_COUNT {
             let pos = chunks.index_to_pos(index);
 
             let mut neighbors = 0;
             for dir in rule.neighbour_method.get_neighbour_iter() {
-                let neighbour_pos = utils::wrap(pos + *dir, size as i32);
+                let neighbour_pos = utils::wrap(pos + *dir, bounds);
 
                 let index  = chunks.pos_to_index(neighbour_pos);
                 let chunk  = index_to_chunk_index(index);
@@ -244,11 +242,11 @@ impl LeddooAtomic {
 
     pub fn spawn_noise(&mut self, rule: &Rule) {
         let center = self.center();
-        let size   = self.size();
+        let bounds = self.bounds();
 
         let mut chunks = self.chunks.write().unwrap();
         utils::make_some_noise_default(center, |pos| {
-            let index  = chunks.pos_to_index(utils::wrap(pos, size as i32));
+            let index  = chunks.pos_to_index(utils::wrap(pos, bounds));
             let chunk  = index_to_chunk_index(index);
             let offset = index_to_chunk_offset(index);
             let cell = &mut chunks.chunks[chunk].0[offset];
@@ -290,7 +288,7 @@ impl crate::cells::Sim for LeddooAtomic {
                             rule.states,
                             cell.value,
                             cell.neighbors(),
-                            utils::dist_to_center(pos, &rule),
+                            utils::dist_to_center(pos, self.bounds()),
                         )
                         .as_rgba_f32(),
                 });
@@ -304,6 +302,14 @@ impl crate::cells::Sim for LeddooAtomic {
 
     fn cell_count(&self) -> usize {
         self.cell_count()
+    }
+
+    fn bounds(&self) -> i32 {
+        self.bounds()
+    }
+
+    fn set_bounds(&mut self, new_bounds: i32) -> i32 {
+        self.set_bounds(new_bounds)
     }
 }
 

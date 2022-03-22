@@ -20,6 +20,8 @@ use super::CellState;
 pub struct CellsMultithreaded {
     states: Arc<RwLock<HashMap<IVec3, CellState>>>,
 
+    bounding_size: i32,
+
     // cached data used for calculating state
     neighbours: Arc<RwLock<HashMap<IVec3, u8>>>,
     changes: HashMap<IVec3, StateChange>,
@@ -43,6 +45,7 @@ impl CellsMultithreaded {
     pub fn new() -> Self {
         CellsMultithreaded {
             states: Arc::new(RwLock::new(HashMap::new())),
+            bounding_size: 0,
             neighbours: Arc::new(RwLock::new(HashMap::new())),
             changes: HashMap::new(),
             change_mask: HashMap::new(),
@@ -145,7 +148,7 @@ impl CellsMultithreaded {
             // prepare data needed for thread
             let state_rc_clone = self.states.clone();
             let rule_states = rule.states;
-            let rule_bounding = rule.bounding_size;
+            let rule_bounding = self.bounding_size;
             let neighbour_method = rule.neighbour_method.clone();
             let position_cache = self.position_thread_cache[position_cache_index].clone();
             let result_cache = self.neighbour_results_cache[position_cache_index].clone();
@@ -204,7 +207,7 @@ impl CellsMultithreaded {
             let rule_survival_rule = rule.survival_rule.clone();
             let rule_birth_rule = rule.birth_rule.clone();
             let rule_start_state_value = rule.states;
-            let rule_bounding = rule.bounding_size;
+            let rule_bounding = self.bounding_size;
             let position_cache = self.position_thread_cache[position_cache_index].clone();
             let change_results_cache = self.change_results_cache[position_cache_index].clone();
 
@@ -263,7 +266,7 @@ impl CellsMultithreaded {
                         CellState::new(
                             rule.states,
                             *neighbours,
-                            utils::dist_to_center(*cell_pos, rule),
+                            utils::dist_to_center(*cell_pos, self.bounding_size),
                         ),
                     );
                 }
@@ -286,8 +289,8 @@ impl crate::cells::Sim for CellsMultithreaded {
     fn update(&mut self, input: &Input<KeyCode>, rule: &Rule, task_pool: &TaskPool) {
         if input.just_pressed(KeyCode::P) {
             let states = &mut self.states.write().unwrap();
-            utils::make_some_noise_default(rule.center(), |pos| {
-                let dist = utils::dist_to_center(pos, &rule);
+            utils::make_some_noise_default(utils::center(self.bounding_size), |pos| {
+                let dist = utils::dist_to_center(pos, self.bounding_size);
                 states.insert(pos, CellState::new(rule.states, 0, dist));
             });
         }
@@ -298,7 +301,7 @@ impl crate::cells::Sim for CellsMultithreaded {
     fn render(&self, rule: &Rule, data: &mut Vec<InstanceData>) {
         let states = self.states.read().unwrap();
         for cell in states.iter() {
-            let pos = *cell.0 - rule.center();
+            let pos = *cell.0 - utils::center(self.bounding_size);
             data.push(InstanceData {
                 position: vec3(pos.x as f32, pos.y as f32, pos.z as f32),
                 scale: 1.0,
@@ -321,5 +324,14 @@ impl crate::cells::Sim for CellsMultithreaded {
 
     fn cell_count(&self) -> usize {
         self.states.read().unwrap().len()
+    }
+    
+    fn bounds(&self) -> i32 {
+        self.bounding_size
+    }
+
+    fn set_bounds(&mut self, new_bounds: i32) -> i32 {
+        self.bounding_size = new_bounds;
+        new_bounds
     }
 }

@@ -16,6 +16,7 @@ use super::CellState;
 
 pub struct CellsSinglethreaded {
     states: HashMap<IVec3, CellState>,
+    bounding_size: i32,
     // cached datta used for calculating state
     neighbours: HashMap<IVec3, u8>,
     changes: HashMap<IVec3, i32>,
@@ -26,6 +27,7 @@ impl CellsSinglethreaded {
     pub fn new() -> Self {
         CellsSinglethreaded {
             states: HashMap::new(),
+            bounding_size: 0,
             neighbours: HashMap::new(),
             changes: HashMap::new(),
             spawn: Vec::new(),
@@ -44,7 +46,7 @@ impl CellsSinglethreaded {
             if cell.value == rule.states {
                 // get neighbouring cells and increment
                 for dir in rule.neighbour_method.get_neighbour_iter() {
-                    let neighbour_pos = utils::wrap(*cell_pos + *dir, rule.bounding_size);
+                    let neighbour_pos = utils::wrap(*cell_pos + *dir, self.bounding_size);
                     if !self.neighbours.contains_key(&neighbour_pos) {
                         self.neighbours.insert(neighbour_pos, 0);
                     }
@@ -56,7 +58,7 @@ impl CellsSinglethreaded {
     }
 
     pub fn calculate_changes(&mut self, rule: &Rule) {
-        let (x_range, y_range, z_range) = rule.get_bounding_ranges();
+        let (x_range, y_range, z_range) = utils::get_bounding_ranges(self.bounding_size);
         for z in z_range {
             for y in y_range.clone() {
                 for x in x_range.clone() {
@@ -94,7 +96,7 @@ impl CellsSinglethreaded {
                 CellState::new(
                     rule.states,
                     *neighbours,
-                    utils::dist_to_center(*cell_pos, rule),
+                    utils::dist_to_center(*cell_pos, self.bounding_size),
                 ),
             );
         }
@@ -119,8 +121,8 @@ impl CellsSinglethreaded {
 impl crate::cells::Sim for CellsSinglethreaded {
     fn update(&mut self, input: &Input<KeyCode>, rule: &Rule, _task_pool: &TaskPool) {
         if input.just_pressed(KeyCode::P) {
-            utils::make_some_noise_default(rule.center(), |pos| {
-                let dist = utils::dist_to_center(pos, &rule);
+            utils::make_some_noise_default(utils::center(self.bounding_size), |pos| {
+                let dist = utils::dist_to_center(pos, self.bounding_size);
                 self.states.insert(pos, CellState::new(rule.states, 0, dist));
             });
         }
@@ -130,7 +132,7 @@ impl crate::cells::Sim for CellsSinglethreaded {
 
     fn render(&self, rule: &Rule, data: &mut Vec<InstanceData>) {
         for cell in self.states.iter() {
-            let pos = *cell.0 - rule.center();
+            let pos = *cell.0 - utils::center(self.bounding_size);
             data.push(InstanceData {
                 position: vec3(pos.x as f32, pos.y as f32, pos.z as f32),
                 scale: 1.0,
@@ -153,6 +155,15 @@ impl crate::cells::Sim for CellsSinglethreaded {
 
     fn cell_count(&self) -> usize {
         self.states.len()
+    }
+
+    fn bounds(&self) -> i32 {
+        self.bounding_size
+    }
+
+    fn set_bounds(&mut self, new_bounds: i32) -> i32 {
+        self.bounding_size = new_bounds;
+        new_bounds
     }
 }
 

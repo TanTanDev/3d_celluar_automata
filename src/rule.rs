@@ -1,8 +1,6 @@
 use bevy::prelude::Color;
 use std::ops::RangeInclusive;
 
-use bevy::math::{ivec3, IVec3};
-
 use crate::{neighbours::NeighbourMethod, utils};
 
 #[derive(Clone, Copy)]
@@ -70,24 +68,5 @@ pub struct Rule {
     pub birth_rule: Value,
     pub states: u8,
     pub neighbour_method: NeighbourMethod,
-    pub bounding_size: i32,
     pub color_method: ColorMethod,
-}
-
-impl Rule {
-    pub fn get_bounding_ranges(&self) -> (
-        RangeInclusive<i32>,
-        RangeInclusive<i32>,
-        RangeInclusive<i32>,
-    ) {
-        let x_range = 0..=self.bounding_size-1;
-        let y_range = 0..=self.bounding_size-1;
-        let z_range = 0..=self.bounding_size-1;
-        (x_range, y_range, z_range)
-    }
-
-    pub fn center(&self) -> IVec3 {
-        let center = self.bounding_size/2;
-        ivec3(center, center, center)
-    }
 }

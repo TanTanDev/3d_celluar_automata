@@ -15,8 +15,6 @@ mod cells;
 
 fn main() {
     let mut rule = Rule {
-        bounding_size: 50,
-
         // builder
         survival_rule: Value::new(&[2, 6, 9]),
         birth_rule: Value::new(&[4, 6, 8, 9, 10]),

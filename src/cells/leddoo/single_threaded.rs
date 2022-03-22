@@ -27,23 +27,26 @@ impl Cell {
 
 pub struct LeddooSingleThreaded {
     cells: Vec<Cell>,
-    size: usize,
+    bounds: i32,
 }
 
 impl LeddooSingleThreaded {
     pub fn new() -> Self {
         LeddooSingleThreaded {
             cells: vec![],
-            size: 0,
+            bounds: 0,
         }
     }
 
-    pub fn set_size(&mut self, new_size: usize) {
-        if new_size != self.size {
+    pub fn set_bounds(&mut self, new_bounds: i32) -> i32 {
+        if new_bounds != self.bounds {
             self.cells.clear();
-            self.cells.resize(new_size*new_size*new_size, Cell { value: 0, neighbors: 0 });
-            self.size = new_size;
+            self.cells.resize(
+                (new_bounds*new_bounds*new_bounds) as usize,
+                Cell { value: 0, neighbors: 0 });
+            self.bounds = new_bounds;
         }
+        self.bounds
     }
 
     pub fn cell_count(&self) -> usize {
@@ -58,15 +61,15 @@ impl LeddooSingleThreaded {
 
 
     fn index_to_pos(&self, index: usize) -> IVec3 {
-        utils::index_to_pos(index, self.size as i32)
+        utils::index_to_pos(index, self.bounds)
     }
 
     fn pos_to_index(&self, vec: IVec3) -> usize {
-        utils::pos_to_index(vec, self.size as i32)
+        utils::pos_to_index(vec, self.bounds)
     }
 
     pub fn wrap(&self, pos: IVec3) -> IVec3 {
-        utils::wrap(pos, self.size as i32)
+        utils::wrap(pos, self.bounds)
     }
 
 
@@ -87,7 +90,6 @@ impl LeddooSingleThreaded {
 
     pub fn update(&mut self, rule: &Rule) {
         // TODO: detect neighbor rule change.
-        self.set_size(rule.bounding_size as usize);
 
         let mut spawns = vec![];
         let mut deaths = vec![];
@@ -140,7 +142,7 @@ impl LeddooSingleThreaded {
     }
 
     pub fn spawn_noise(&mut self, rule: &Rule) {
-        utils::make_some_noise_default(rule.center(), |pos| {
+        utils::make_some_noise_default(utils::center(self.bounds), |pos| {
             let index = self.pos_to_index(self.wrap(pos));
             if self.cells[index].is_dead() {
                 self.cells[index].value = rule.states;
@@ -168,7 +170,7 @@ impl crate::cells::Sim for LeddooSingleThreaded {
 
             let pos = self.index_to_pos(index);
             data.push(InstanceData {
-                position: (pos - rule.center()).as_vec3(),
+                position: (pos - utils::center(self.bounds())).as_vec3(),
                 scale: 1.0,
                 color: rule
                     .color_method
@@ -176,7 +178,7 @@ impl crate::cells::Sim for LeddooSingleThreaded {
                         rule.states,
                         cell.value,
                         cell.neighbors,
-                        utils::dist_to_center(pos, &rule),
+                        utils::dist_to_center(pos, self.bounds()),
                     )
                     .as_rgba_f32(),
             });
@@ -189,5 +191,13 @@ impl crate::cells::Sim for LeddooSingleThreaded {
 
     fn cell_count(&self) -> usize {
         self.cell_count()
+    }
+
+    fn bounds(&self) -> i32 {
+        self.bounds
+    }
+
+    fn set_bounds(&mut self, new_bounds: i32) -> i32 {
+        self.set_bounds(new_bounds)
     }
 }

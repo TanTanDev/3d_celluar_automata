@@ -69,8 +69,8 @@ impl<Cell> Chunks<Cell> {
         }
     }
 
-    pub fn size(&self) -> usize {
-        self.chunk_radius * CHUNK_SIZE
+    pub fn bounds(&self) -> i32 {
+        (self.chunk_radius * CHUNK_SIZE) as i32
     }
 
 
@@ -102,8 +102,8 @@ impl<Cell> Chunks<Cell> {
 }
 
 impl<Cell: Default> Chunks<Cell> {
-    pub fn set_size(&mut self, new_size: usize) -> usize {
-        let radius = (new_size + CHUNK_SIZE - 1) / CHUNK_SIZE;
+    pub fn set_bounds(&mut self, new_bounds: i32) -> i32 {
+        let radius = (new_bounds as usize + CHUNK_SIZE - 1) / CHUNK_SIZE;
 
         if radius != self.chunk_radius {
             let count = radius*radius*radius;
@@ -112,6 +112,6 @@ impl<Cell: Default> Chunks<Cell> {
             self.chunk_count  = count;
         }
 
-        self.size()
+        self.bounds()
     }
 }

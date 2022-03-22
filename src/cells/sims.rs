@@ -11,6 +11,7 @@ use crate::{
 pub struct Sims {
     sims: Vec<(String, Box<dyn Sim>)>,
     active_sim: Option<usize>,
+    bounds: i32,
 }
 
 impl Sims {
@@ -18,6 +19,7 @@ impl Sims {
         Sims {
             sims: vec![],
             active_sim: None,
+            bounds: 64,
         }
     }
 
@@ -58,14 +60,18 @@ pub fn update(
     }
 
     if let Some(active) = this.active_sim {
-        let sim = &mut this.sims[active].1;
+        let bounds = this.bounds;
 
+        let sim = &mut this.sims[active].1;
+        let new_bounds = sim.set_bounds(bounds);
         sim.update(&input, &rule, &task_pool.0);
 
         let mut instance_data = query.iter_mut().next().unwrap();
         instance_data.0.clear();
 
         sim.render(&rule, &mut instance_data.0);
+
+        this.bounds = new_bounds;
     }
 }
 

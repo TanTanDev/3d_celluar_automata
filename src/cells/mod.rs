@@ -15,6 +15,9 @@ pub trait Sim: Send + Sync {
     fn reset(&mut self, rule: &Rule);
 
     fn cell_count(&self) -> usize;
+
+    fn bounds(&self) -> i32;
+    fn set_bounds(&mut self, new_bounds: i32) -> i32;
 }
 
 
