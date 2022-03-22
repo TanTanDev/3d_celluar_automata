@@ -19,18 +19,33 @@ use super::{
 };
 
 use std::sync::{atomic::{AtomicU8, Ordering}, Arc, RwLock};
+use std::cell::UnsafeCell;
 
 
 
 #[derive(Default)]
 struct Cell {
     value: u8,
-    neighbours: AtomicU8,
+    neighbors: UnsafeCell<AtomicU8>,
 }
+
+unsafe impl Sync for Cell {}
 
 impl Cell {
     fn is_dead(&self) -> bool {
         self.value == 0
+    }
+
+    fn neighbors(&self) -> u8 {
+        unsafe { *(*self.neighbors.get()).get_mut() }
+    }
+
+    fn neighbors_mut(&self) -> &mut u8 {
+        unsafe { (*self.neighbors.get()).get_mut() }
+    }
+
+    fn neighbors_atomic(&self) -> &mut AtomicU8 {
+        unsafe { &mut *self.neighbors.get() }
     }
 }
 
@@ -90,12 +105,12 @@ impl LeddooAtomic {
                 let index  = Chunks::pos_to_index_ex(neighbour_pos, chunk_radius);
                 let chunk  = index_to_chunk_index(index);
                 let offset = index_to_chunk_offset(index);
-                let neighbours = &chunks[chunk].0[offset].neighbours;
+                let neighbors = &*chunks[chunk].0[offset].neighbors_atomic();
                 if inc {
-                    neighbours.fetch_add(1, Ordering::Relaxed);
+                    neighbors.fetch_add(1, Ordering::Relaxed);
                 }
                 else {
-                    neighbours.fetch_sub(1, Ordering::Relaxed);
+                    neighbors.fetch_sub(1, Ordering::Relaxed);
                 }
             }
         }
@@ -104,16 +119,12 @@ impl LeddooAtomic {
                 let neighbour_pos = local + *dir;
                 let offset = Chunk::pos_to_index(neighbour_pos);
 
-                let neighbours = unsafe {
-                    let n = &chunks[chunk_index].0[offset].neighbours;
-                    let r = n as *const AtomicU8 as *mut AtomicU8;
-                    (*r).get_mut()
-                };
+                let neighbors = chunks[chunk_index].0[offset].neighbors_mut();
                 if inc {
-                    *neighbours += 1;
+                    *neighbors += 1;
                 }
                 else {
-                    *neighbours -= 1;
+                    *neighbors -= 1;
                 }
             }
         }
@@ -124,13 +135,13 @@ impl LeddooAtomic {
     ) {
         for (offset, cell) in chunk.0.iter_mut().enumerate() {
             if cell.is_dead() {
-                if rule.birth_rule.in_range(cell.neighbours.load(Ordering::Relaxed)) {
+                if rule.birth_rule.in_range(cell.neighbors()) {
                     cell.value = rule.states;
                     spawns.push(offset);
                 }
             }
             else {
-                if cell.value < rule.states || !rule.survival_rule.in_range(cell.neighbours.load(Ordering::Relaxed)) {
+                if cell.value < rule.states || !rule.survival_rule.in_range(cell.neighbors()) {
                     if cell.value == rule.states {
                         deaths.push(offset);
                     }
@@ -227,7 +238,7 @@ impl LeddooAtomic {
             let chunk  = index_to_chunk_index(index);
             let offset = index_to_chunk_offset(index);
             let cell   = &chunks.chunks[chunk].0[offset];
-            assert_eq!(neighbors, cell.neighbours.load(Ordering::Relaxed));
+            assert_eq!(neighbors, cell.neighbors());
         }
     }
 
@@ -278,7 +289,7 @@ impl crate::cells::Sim for LeddooAtomic {
                         .color(
                             rule.states,
                             cell.value,
-                            cell.neighbours.load(Ordering::Relaxed),
+                            cell.neighbors(),
                             utils::dist_to_center(pos, &rule),
                         )
                         .as_rgba_f32(),
