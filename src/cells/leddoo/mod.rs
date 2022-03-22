@@ -99,6 +99,19 @@ impl<Cell> Chunks<Cell> {
     fn pos_to_index(&self, pos: IVec3) -> usize {
         Chunks::<Cell>::pos_to_index_ex(pos, self.chunk_radius)
     }
+
+    fn visit_cells<F: FnMut(usize, &Cell)>(&self, mut f: F) {
+        for (chunk_index, chunk) in self.chunks.iter().enumerate() {
+            let chunk_pos = utils::index_to_pos(chunk_index, self.chunk_radius as i32);
+            let chunk_pos = CHUNK_SIZE as i32 * chunk_pos;
+
+            for (cell_index, cell) in chunk.0.iter().enumerate() {
+                let pos = chunk_pos + Chunk::<Cell>::index_to_pos(cell_index);
+                let index = utils::pos_to_index(pos, self.bounds());
+                f(index, cell);
+            }
+        }
+    }
 }
 
 impl<Cell: Default> Chunks<Cell> {

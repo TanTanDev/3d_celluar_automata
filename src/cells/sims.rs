@@ -1,10 +1,12 @@
 use bevy::{
-    prelude::{Plugin, Res, ResMut, Query, Input, KeyCode},
+    prelude::{Plugin, Res, ResMut, Query, Input, KeyCode, Color},
     tasks::AsyncComputeTaskPool,
 };
 use crate::{
-    cells::Sim, rule::Rule,
-    cell_renderer::{InstanceMaterialData},
+    cells::Sim,
+    rule::{Rule, ColorMethod},
+    cell_renderer::{InstanceMaterialData, InstanceData, CellRenderer},
+    utils,
 };
 
 
@@ -12,6 +14,8 @@ pub struct Sims {
     sims: Vec<(String, Box<dyn Sim>)>,
     active_sim: Option<usize>,
     bounds: i32,
+    renderer: Option<Box<CellRenderer>>, // rust...
+    color_method: ColorMethod,
 }
 
 impl Sims {
@@ -20,6 +24,8 @@ impl Sims {
             sims: vec![],
             active_sim: None,
             bounds: 64,
+            renderer: Some(Box::new(CellRenderer::new())),
+            color_method: ColorMethod::DistToCenter(Color::YELLOW, Color::RED),
         }
     }
 
@@ -36,6 +42,8 @@ pub fn update(
     mut query: Query<&mut InstanceMaterialData>,
     task_pool: Res<AsyncComputeTaskPool>,
 ) {
+    let instance_data = &mut query.iter_mut().next().unwrap().0;
+
     let mut new_active = None;
     if input.just_pressed(KeyCode::Key1) { new_active = Some(0); }
     if input.just_pressed(KeyCode::Key2) { new_active = Some(1); }
@@ -50,7 +58,7 @@ pub fn update(
 
     if let Some(new_active) = new_active {
         if let Some(active) = this.active_sim {
-            this.sims[active].1.reset(&rule);
+            this.sims[active].1.reset();
         }
 
         if new_active < this.sims.len() {
@@ -60,18 +68,39 @@ pub fn update(
     }
 
     if let Some(active) = this.active_sim {
-        let bounds = this.bounds;
+        let old_bounds = this.bounds;
+        let color_method = this.color_method;
+        let mut renderer = this.renderer.take().unwrap();
 
         let sim = &mut this.sims[active].1;
-        let new_bounds = sim.set_bounds(bounds);
+
+        let bounds = sim.set_bounds(old_bounds);
+        renderer.set_bounds(bounds);
+
         sim.update(&input, &rule, &task_pool.0);
+        sim.render(&mut renderer);
 
-        let mut instance_data = query.iter_mut().next().unwrap();
-        instance_data.0.clear();
+        instance_data.truncate(0);
+        for index in 0..renderer.cell_count() {
+            let value     = renderer.values[index];
+            let neighbors = renderer.neighbors[index];
 
-        sim.render(&rule, &mut instance_data.0);
+            if value != 0 {
+                let pos = utils::index_to_pos(index, bounds);
+                instance_data.push(InstanceData {
+                    position: (pos - utils::center(bounds)).as_vec3(),
+                    scale: 1.0,
+                    color: color_method.color(
+                        rule.states,
+                        value, neighbors,
+                        utils::dist_to_center(pos, bounds),
+                    ).into(),
+                });
+            }
+        }
 
-        this.bounds = new_bounds;
+        this.bounds   = bounds;
+        this.renderer = Some(renderer);
     }
 }
 

@@ -1,5 +1,5 @@
 use bevy::{tasks::TaskPool, prelude::{Input, KeyCode}};
-use crate::{rule::Rule, cell_renderer::InstanceData};
+use crate::{rule::Rule, cell_renderer::CellRenderer};
 
 
 pub trait Sim: Send + Sync {
@@ -8,11 +8,9 @@ pub trait Sim: Send + Sync {
         rule: &Rule,
         task_pool: &TaskPool);
 
-    fn render(&self,
-        rule: &Rule,
-        data: &mut Vec<InstanceData>);
+    fn render(&self, data: &mut CellRenderer);
 
-    fn reset(&mut self, rule: &Rule);
+    fn reset(&mut self);
 
     fn cell_count(&self) -> usize;
 

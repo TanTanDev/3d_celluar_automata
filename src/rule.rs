@@ -35,7 +35,7 @@ impl Value {
 
 
 #[allow(dead_code)]
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub enum ColorMethod {
     Single(Color),
     StateLerp(Color, Color),
@@ -68,5 +68,4 @@ pub struct Rule {
     pub birth_rule: Value,
     pub states: u8,
     pub neighbour_method: NeighbourMethod,
-    pub color_method: ColorMethod,
 }

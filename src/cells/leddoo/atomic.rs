@@ -8,7 +8,7 @@ use bevy::{
 use futures_lite::future;
 
 use crate::{
-    cell_renderer::{InstanceData},
+    cell_renderer::{CellRenderer},
     rule::Rule,
     utils::{self},
 };
@@ -270,33 +270,13 @@ impl crate::cells::Sim for LeddooAtomic {
         self.update(rule, task_pool);
     }
 
-    fn render(&self, rule: &Rule, data: &mut Vec<InstanceData>) {
-        let chunks = self.chunks.read().unwrap();
-        for (chunk_index, chunk) in chunks.chunks.iter().enumerate() {
-            for (index, cell) in chunk.0.iter().enumerate() {
-                if cell.is_dead() {
-                    continue;
-                }
-
-                let pos = chunks.index_to_pos(chunk_index*CHUNK_CELL_COUNT + index);
-                data.push(InstanceData {
-                    position: (pos - self.center()).as_vec3(),
-                    scale: 1.0,
-                    color: rule
-                        .color_method
-                        .color(
-                            rule.states,
-                            cell.value,
-                            cell.neighbors(),
-                            utils::dist_to_center(pos, self.bounds()),
-                        )
-                        .as_rgba_f32(),
-                });
-            }
-        }
+    fn render(&self, renderer: &mut CellRenderer) {
+        self.chunks.read().unwrap().visit_cells(|index, cell| {
+            renderer.set(index, cell.value, cell.neighbors());
+        });
     }
 
-    fn reset(&mut self, _rule: &Rule) {
+    fn reset(&mut self) {
         *self = LeddooAtomic::new();
     }
 

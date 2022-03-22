@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 
 use bevy::{
-    math::{ivec3, vec3, IVec3},
+    math::{ivec3, IVec3},
     prelude::{Input, KeyCode},
     tasks::TaskPool,
 };
 
 use crate::{
-    cell_renderer::{InstanceData},
+    cell_renderer::{CellRenderer},
     rule::Rule,
     utils,
 };
@@ -96,7 +96,6 @@ impl CellsSinglethreaded {
                 CellState::new(
                     rule.states,
                     *neighbours,
-                    utils::dist_to_center(*cell_pos, self.bounding_size),
                 ),
             );
         }
@@ -122,34 +121,21 @@ impl crate::cells::Sim for CellsSinglethreaded {
     fn update(&mut self, input: &Input<KeyCode>, rule: &Rule, _task_pool: &TaskPool) {
         if input.just_pressed(KeyCode::P) {
             utils::make_some_noise_default(utils::center(self.bounding_size), |pos| {
-                let dist = utils::dist_to_center(pos, self.bounding_size);
-                self.states.insert(pos, CellState::new(rule.states, 0, dist));
+                self.states.insert(pos, CellState::new(rule.states, 0));
             });
         }
 
         self.tick(rule);
     }
 
-    fn render(&self, rule: &Rule, data: &mut Vec<InstanceData>) {
+    fn render(&self, renderer: &mut CellRenderer) {
+        renderer.clear();
         for cell in self.states.iter() {
-            let pos = *cell.0 - utils::center(self.bounding_size);
-            data.push(InstanceData {
-                position: vec3(pos.x as f32, pos.y as f32, pos.z as f32),
-                scale: 1.0,
-                color: rule
-                    .color_method
-                    .color(
-                        rule.states,
-                        cell.1.value,
-                        cell.1.neighbours,
-                        cell.1.dist_to_center,
-                    )
-                    .as_rgba_f32(),
-            });
+            renderer.set_pos(*cell.0, cell.1.value, cell.1.neighbours);
         }
     }
 
-    fn reset(&mut self, _rule: &Rule) {
+    fn reset(&mut self) {
         *self = CellsSinglethreaded::new();
     }
 

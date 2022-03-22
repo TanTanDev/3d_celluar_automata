@@ -19,7 +19,7 @@ fn main() {
         survival_rule: Value::new(&[2, 6, 9]),
         birth_rule: Value::new(&[4, 6, 8, 9, 10]),
         states: 10,
-        color_method: ColorMethod::DistToCenter(Color::YELLOW, Color::RED),
+        //color_method: ColorMethod::DistToCenter(Color::YELLOW, Color::RED),
         neighbour_method: NeighbourMethod::Moore,
     };
 
@@ -28,7 +28,7 @@ fn main() {
         rule.survival_rule = Value::from_range(0..=6);
         rule.birth_rule = Value::new(&[1,3]);
         rule.states = 2;
-        rule.color_method = ColorMethod::DistToCenter(Color::GREEN, Color::BLUE);
+        //rule.color_method = ColorMethod::DistToCenter(Color::GREEN, Color::BLUE);
         rule.neighbour_method = NeighbourMethod::VonNeuman;
     }
 
@@ -37,7 +37,7 @@ fn main() {
         rule.survival_rule = Value::new(&[0,1,2,3,7,8,9,11,13,18,21,22,24,26]);
         rule.birth_rule = Value::new(&[4,13,17,20,21,22,23,24,26]);
         rule.states = 4;
-        rule.color_method = ColorMethod::StateLerp(Color::RED, Color::BLUE);
+        //rule.color_method = ColorMethod::StateLerp(Color::RED, Color::BLUE);
         rule.neighbour_method = NeighbourMethod::Moore;
     }
 
@@ -46,7 +46,7 @@ fn main() {
         rule.survival_rule = Value::new(&[5,6,7,8]);
         rule.birth_rule = Value::new(&[6,7,9]);
         rule.states = 10;
-        rule.color_method = ColorMethod::DistToCenter(Color::GREEN, Color::BLUE);
+        //rule.color_method = ColorMethod::DistToCenter(Color::GREEN, Color::BLUE);
         rule.neighbour_method = NeighbourMethod::Moore;
     }
 
@@ -55,7 +55,7 @@ fn main() {
         rule.survival_rule = Value::new(&[3,6,9]);
         rule.birth_rule = Value::new(&[4,8,10]);
         rule.states = 20;
-        rule.color_method = ColorMethod::StateLerp(Color::RED, Color::GREEN);
+        //rule.color_method = ColorMethod::StateLerp(Color::RED, Color::GREEN);
         rule.neighbour_method = NeighbourMethod::Moore;
     }
 
@@ -64,7 +64,7 @@ fn main() {
         rule.survival_rule = Value::from_range(9..=26);
         rule.birth_rule = Value::new(&[5,6,7,12,13,15]);
         rule.states = 20;
-        rule.color_method = ColorMethod::StateLerp(Color::YELLOW, Color::BLUE);
+        //rule.color_method = ColorMethod::StateLerp(Color::YELLOW, Color::BLUE);
         rule.neighbour_method = NeighbourMethod::Moore;
     }
 
@@ -73,7 +73,7 @@ fn main() {
         rule.survival_rule = Value::new(&[4]);
         rule.birth_rule = Value::new(&[4]);
         rule.states = 5;
-        rule.color_method = ColorMethod::StateLerp(Color::BLACK, Color::RED);
+        //rule.color_method = ColorMethod::StateLerp(Color::BLACK, Color::RED);
         rule.neighbour_method = NeighbourMethod::Moore;
     }
 
@@ -82,7 +82,7 @@ fn main() {
         rule.survival_rule = Value::new(&[4]);
         rule.birth_rule = Value::new(&[3]);
         rule.states = 20;
-        rule.color_method = ColorMethod::StateLerp(Color::BLACK, Color::RED);
+        //rule.color_method = ColorMethod::StateLerp(Color::BLACK, Color::RED);
         rule.neighbour_method = NeighbourMethod::Moore;
     }
 
@@ -91,7 +91,7 @@ fn main() {
         rule.survival_rule = Value::new(&[6,7]);
         rule.birth_rule = Value::new(&[4,6,9,10,11]);
         rule.states = 6;
-        rule.color_method = ColorMethod::StateLerp(Color::BLUE, Color::RED);
+        //rule.color_method = ColorMethod::StateLerp(Color::BLUE, Color::RED);
         rule.neighbour_method = NeighbourMethod::Moore;
     }
 
@@ -100,7 +100,7 @@ fn main() {
         rule.survival_rule = Value::new(&[5]);
         rule.birth_rule = Value::new(&[4, 6, 9, 10, 11, 16, 17, 18, 19, 20, 21, 22, 23, 24]);
         rule.states = 35;
-        rule.color_method = ColorMethod::StateLerp(Color::BLUE, Color::RED);
+        //rule.color_method = ColorMethod::StateLerp(Color::BLUE, Color::RED);
         rule.neighbour_method = NeighbourMethod::Moore;
     }
 

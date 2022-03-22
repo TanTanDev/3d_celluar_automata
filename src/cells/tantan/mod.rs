@@ -9,15 +9,13 @@ pub use multi_threaded::*;
 struct CellState {
     value: u8,
     neighbours: u8,
-    dist_to_center: f32,
 }
 
 impl CellState {
-    pub fn new(value: u8, neighbours: u8, dist_to_center: f32) -> Self {
+    pub fn new(value: u8, neighbours: u8) -> Self {
         CellState {
             value,
             neighbours,
-            dist_to_center,
         }
     }
 }

@@ -6,7 +6,7 @@ use bevy::{
 };
 
 use crate::{
-    cell_renderer::{InstanceData},
+    cell_renderer::{CellRenderer},
     rule::Rule,
     utils,
 };
@@ -162,30 +162,13 @@ impl crate::cells::Sim for LeddooSingleThreaded {
         self.update(rule);
     }
 
-    fn render(&self, rule: &Rule, data: &mut Vec<InstanceData>) {
+    fn render(&self, renderer: &mut CellRenderer) {
         for (index, cell) in self.cells.iter().enumerate() {
-            if cell.is_dead() {
-                continue;
-            }
-
-            let pos = self.index_to_pos(index);
-            data.push(InstanceData {
-                position: (pos - utils::center(self.bounds())).as_vec3(),
-                scale: 1.0,
-                color: rule
-                    .color_method
-                    .color(
-                        rule.states,
-                        cell.value,
-                        cell.neighbors,
-                        utils::dist_to_center(pos, self.bounds()),
-                    )
-                    .as_rgba_f32(),
-            });
+            renderer.set(index, cell.value, cell.neighbors);
         }
     }
 
-    fn reset(&mut self, _rule: &Rule) {
+    fn reset(&mut self) {
         *self = LeddooSingleThreaded::new();
     }
 

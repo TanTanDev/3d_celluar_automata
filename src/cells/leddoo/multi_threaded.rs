@@ -8,7 +8,7 @@ use bevy::{
 use futures_lite::future;
 
 use crate::{
-    cell_renderer::{InstanceData},
+    cell_renderer::{CellRenderer},
     rule::Rule,
     utils::{self},
 };
@@ -23,7 +23,7 @@ use super::{
 #[derive(Clone, Copy, Default)]
 struct Cell {
     value: u8,
-    neighbours: u8,
+    neighbors: u8,
 }
 
 impl Cell {
@@ -83,10 +83,10 @@ impl LeddooMultiThreaded {
 
             let index = Chunk::pos_to_index(neighbour_pos);
             if inc {
-                chunk.0[index].neighbours += 1;
+                chunk.0[index].neighbors += 1;
             }
             else {
-                chunk.0[index].neighbours -= 1;
+                chunk.0[index].neighbors -= 1;
             }
         }
     }
@@ -100,10 +100,10 @@ impl LeddooMultiThreaded {
             let chunk  = index_to_chunk_index(index);
             let offset = index_to_chunk_offset(index);
             if inc {
-                chunks[chunk].0[offset].neighbours += 1;
+                chunks[chunk].0[offset].neighbors += 1;
             }
             else {
-                chunks[chunk].0[offset].neighbours -= 1;
+                chunks[chunk].0[offset].neighbors -= 1;
             }
         }
     }
@@ -114,7 +114,7 @@ impl LeddooMultiThreaded {
     ) {
         for (offset, cell) in chunk.0.iter_mut().enumerate() {
             if cell.is_dead() {
-                if rule.birth_rule.in_range(cell.neighbours) {
+                if rule.birth_rule.in_range(cell.neighbors) {
                     cell.value = rule.states;
 
                     if Chunk::is_border_pos(Chunk::index_to_pos(offset), 0) {
@@ -126,7 +126,7 @@ impl LeddooMultiThreaded {
                 }
             }
             else {
-                if cell.value < rule.states || !rule.survival_rule.in_range(cell.neighbours) {
+                if cell.value < rule.states || !rule.survival_rule.in_range(cell.neighbors) {
                     if cell.value == rule.states {
                         if Chunk::is_border_pos(Chunk::index_to_pos(offset), 0) {
                             deaths.push(chunk_index*CHUNK_CELL_COUNT + offset);
@@ -237,7 +237,7 @@ impl LeddooMultiThreaded {
 
             let chunk  = index_to_chunk_index(index);
             let offset = index_to_chunk_offset(index);
-            assert_eq!(neighbors, self.chunks.chunks[chunk].0[offset].neighbours);
+            assert_eq!(neighbors, self.chunks.chunks[chunk].0[offset].neighbors);
         }
     }
 
@@ -267,32 +267,13 @@ impl crate::cells::Sim for LeddooMultiThreaded {
         self.update(rule, task_pool);
     }
 
-    fn render(&self, rule: &Rule, data: &mut Vec<InstanceData>) {
-        for (chunk_index, chunk) in self.chunks.chunks.iter().enumerate() {
-            for (index, cell) in chunk.0.iter().enumerate() {
-                if cell.is_dead() {
-                    continue;
-                }
-
-                let pos = self.chunks.index_to_pos(chunk_index*CHUNK_CELL_COUNT + index);
-                data.push(InstanceData {
-                    position: (pos - self.center()).as_vec3(),
-                    scale: 1.0,
-                    color: rule
-                        .color_method
-                        .color(
-                            rule.states,
-                            cell.value,
-                            cell.neighbours,
-                            utils::dist_to_center(pos, self.bounds()),
-                        )
-                        .as_rgba_f32(),
-                });
-            }
-        }
+    fn render(&self, renderer: &mut CellRenderer) {
+        self.chunks.visit_cells(|index, cell| {
+            renderer.set(index, cell.value, cell.neighbors);
+        });
     }
 
-    fn reset(&mut self, _rule: &Rule) {
+    fn reset(&mut self) {
         *self = LeddooMultiThreaded::new();
     }
 
