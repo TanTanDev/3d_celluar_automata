@@ -1,4 +1,5 @@
 use bevy::{prelude::*, render::view::NoFrustumCulling};
+use bevy_egui::{EguiPlugin};
 use cell_event::CellStatesChangedEvent;
 pub mod cell_event;
 mod cell_renderer;
@@ -112,6 +113,7 @@ fn main() {
     App::new()
         .insert_resource(task_pool_settings)
         .add_plugins(DefaultPlugins)
+        .add_plugin(EguiPlugin)
         .insert_resource(ClearColor(Color::rgb(0.65f32, 0.9f32, 0.96f32)))
         .add_event::<CellStatesChangedEvent>()
         .add_plugin(RotatingCameraPlugin)

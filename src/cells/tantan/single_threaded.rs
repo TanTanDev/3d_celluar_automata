@@ -2,7 +2,6 @@ use std::collections::HashMap;
 
 use bevy::{
     math::{ivec3, IVec3},
-    prelude::{Input, KeyCode},
     tasks::TaskPool,
 };
 
@@ -118,13 +117,7 @@ impl CellsSinglethreaded {
 
 
 impl crate::cells::Sim for CellsSinglethreaded {
-    fn update(&mut self, input: &Input<KeyCode>, rule: &Rule, _task_pool: &TaskPool) {
-        if input.just_pressed(KeyCode::P) {
-            utils::make_some_noise_default(utils::center(self.bounding_size), |pos| {
-                self.states.insert(pos, CellState::new(rule.states, 0));
-            });
-        }
-
+    fn update(&mut self, rule: &Rule, _task_pool: &TaskPool) {
         self.tick(rule);
     }
 
@@ -139,6 +132,12 @@ impl crate::cells::Sim for CellsSinglethreaded {
         *self = CellsSinglethreaded::new();
     }
 
+    fn spawn_noise(&mut self, rule: &Rule) {
+        utils::make_some_noise_default(utils::center(self.bounding_size), |pos| {
+            self.states.insert(pos, CellState::new(rule.states, 0));
+        });
+    }
+
     fn cell_count(&self) -> usize {
         self.states.len()
     }
@@ -148,6 +147,9 @@ impl crate::cells::Sim for CellsSinglethreaded {
     }
 
     fn set_bounds(&mut self, new_bounds: i32) -> i32 {
+        if new_bounds != self.bounding_size {
+            self.reset();
+        }
         self.bounding_size = new_bounds;
         new_bounds
     }

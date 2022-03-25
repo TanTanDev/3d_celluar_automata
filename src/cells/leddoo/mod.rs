@@ -120,11 +120,18 @@ impl<Cell: Default> Chunks<Cell> {
 
         if radius != self.chunk_radius {
             let count = radius*radius*radius;
+            self.chunks.truncate(0);
             self.chunks.resize_with(count, || Chunk::default());
             self.chunk_radius = radius;
             self.chunk_count  = count;
         }
 
         self.bounds()
+    }
+
+    pub fn reset(&mut self) {
+        let bounds = self.bounds();
+        self.set_bounds(0);
+        self.set_bounds(bounds);
     }
 }

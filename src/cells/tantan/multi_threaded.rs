@@ -1,9 +1,7 @@
 use std::{collections::HashMap, sync::Mutex};
 
 use bevy::{
-    input::Input,
     math::{IVec3},
-    prelude::{KeyCode},
     tasks::{TaskPool, Task},
 };
 use futures_lite::future;
@@ -285,14 +283,7 @@ impl CellsMultithreaded {
 
 
 impl crate::cells::Sim for CellsMultithreaded {
-    fn update(&mut self, input: &Input<KeyCode>, rule: &Rule, task_pool: &TaskPool) {
-        if input.just_pressed(KeyCode::P) {
-            let states = &mut self.states.write().unwrap();
-            utils::make_some_noise_default(utils::center(self.bounding_size), |pos| {
-                states.insert(pos, CellState::new(rule.states, 0));
-            });
-        }
-
+    fn update(&mut self, rule: &Rule, task_pool: &TaskPool) {
         self.tick(&rule, &task_pool);
     }
 
@@ -307,6 +298,13 @@ impl crate::cells::Sim for CellsMultithreaded {
         *self = CellsMultithreaded::new();
     }
 
+    fn spawn_noise(&mut self, rule: &Rule) {
+        let states = &mut self.states.write().unwrap();
+        utils::make_some_noise_default(utils::center(self.bounding_size), |pos| {
+            states.insert(pos, CellState::new(rule.states, 0));
+        });
+    }
+
     fn cell_count(&self) -> usize {
         self.states.read().unwrap().len()
     }
@@ -316,6 +314,9 @@ impl crate::cells::Sim for CellsMultithreaded {
     }
 
     fn set_bounds(&mut self, new_bounds: i32) -> i32 {
+        if new_bounds != self.bounding_size {
+            self.reset();
+        }
         self.bounding_size = new_bounds;
         new_bounds
     }

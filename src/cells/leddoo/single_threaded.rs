@@ -1,7 +1,5 @@
 use bevy::{
-    input::Input,
     math::{IVec3},
-    prelude::{KeyCode},
     tasks::TaskPool,
 };
 
@@ -154,11 +152,7 @@ impl LeddooSingleThreaded {
 
 
 impl crate::cells::Sim for LeddooSingleThreaded {
-    fn update(&mut self, input: &Input<KeyCode>, rule: &Rule, _task_pool: &TaskPool) {
-        if input.just_pressed(KeyCode::P) {
-            self.spawn_noise(rule);
-        }
-
+    fn update(&mut self, rule: &Rule, _task_pool: &TaskPool) {
         self.update(rule);
     }
 
@@ -169,7 +163,13 @@ impl crate::cells::Sim for LeddooSingleThreaded {
     }
 
     fn reset(&mut self) {
-        *self = LeddooSingleThreaded::new();
+        let bounds = self.bounds;
+        self.set_bounds(0);
+        self.set_bounds(bounds);
+    }
+
+    fn spawn_noise(&mut self, rule: &Rule) {
+        self.spawn_noise(rule);
     }
 
     fn cell_count(&self) -> usize {
