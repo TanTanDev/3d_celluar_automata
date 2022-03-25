@@ -3,7 +3,7 @@ use std::ops::RangeInclusive;
 
 use crate::{neighbours::NeighbourMethod, utils};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub struct Value ([bool; 27]);
 
 impl Value {
@@ -35,34 +35,34 @@ impl Value {
 
 
 #[allow(dead_code)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ColorMethod {
-    Single(Color),
-    StateLerp(Color, Color),
-    DistToCenter(Color, Color),
-    Neighbour(Color, Color),
+    Single,
+    StateLerp,
+    DistToCenter,
+    Neighbour,
 }
 
 impl ColorMethod {
-    pub fn color(&self, states: u8, state: u8, neighbours: u8, dist_to_center: f32) -> Color {
+    pub fn color(&self, c1: Color, c2: Color, states: u8, state: u8, neighbours: u8, dist_to_center: f32) -> Color {
         match self {
-            ColorMethod::Single(c) => *c,
-            ColorMethod::StateLerp(c1, c2) => {
+            ColorMethod::Single => c1,
+            ColorMethod::StateLerp => {
                 let dt = state as f32 / states as f32;
-                utils::lerp_color(*c1, *c2, dt)
+                utils::lerp_color(c1, c2, dt)
             }
-            ColorMethod::DistToCenter(center_c, bounds_c) => {
-                utils::lerp_color(*center_c, *bounds_c, dist_to_center)
+            ColorMethod::DistToCenter => {
+                utils::lerp_color(c1, c2, dist_to_center)
             }
-            ColorMethod::Neighbour(c1, c2) => {
+            ColorMethod::Neighbour => {
                 let dt = neighbours as f32 / 26f32;
-                utils::lerp_color(*c1, *c2, dt)
+                utils::lerp_color(c1, c2, dt)
             }
         }
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct Rule {
     pub survival_rule: Value,
     pub birth_rule: Value,

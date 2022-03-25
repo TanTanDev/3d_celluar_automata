@@ -294,10 +294,6 @@ impl crate::cells::Sim for CellsMultithreaded {
         }
     }
 
-    fn reset(&mut self) {
-        *self = CellsMultithreaded::new();
-    }
-
     fn spawn_noise(&mut self, rule: &Rule) {
         let states = &mut self.states.write().unwrap();
         utils::make_some_noise_default(utils::center(self.bounding_size), |pos| {
@@ -315,7 +311,7 @@ impl crate::cells::Sim for CellsMultithreaded {
 
     fn set_bounds(&mut self, new_bounds: i32) -> i32 {
         if new_bounds != self.bounding_size {
-            self.reset();
+            *self = CellsMultithreaded::new();
         }
         self.bounding_size = new_bounds;
         new_bounds

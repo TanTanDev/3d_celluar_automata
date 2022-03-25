@@ -162,12 +162,6 @@ impl crate::cells::Sim for LeddooSingleThreaded {
         }
     }
 
-    fn reset(&mut self) {
-        let bounds = self.bounds;
-        self.set_bounds(0);
-        self.set_bounds(bounds);
-    }
-
     fn spawn_noise(&mut self, rule: &Rule) {
         self.spawn_noise(rule);
     }

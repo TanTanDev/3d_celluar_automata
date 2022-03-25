@@ -267,10 +267,6 @@ impl crate::cells::Sim for LeddooMultiThreaded {
         });
     }
 
-    fn reset(&mut self) {
-        self.chunks.reset();
-    }
-
     fn spawn_noise(&mut self, rule: &Rule) {
         self.spawn_noise(rule);
     }

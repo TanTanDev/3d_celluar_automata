@@ -128,10 +128,4 @@ impl<Cell: Default> Chunks<Cell> {
 
         self.bounds()
     }
-
-    pub fn reset(&mut self) {
-        let bounds = self.bounds();
-        self.set_bounds(0);
-        self.set_bounds(bounds);
-    }
 }

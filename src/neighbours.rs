@@ -1,7 +1,7 @@
 use bevy::math::{const_ivec3, IVec3};
 
 #[allow(dead_code)]
-#[derive(Clone)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum NeighbourMethod {
     Moore,
     VonNeuman,

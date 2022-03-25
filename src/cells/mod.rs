@@ -6,7 +6,12 @@ pub trait Sim: Send + Sync {
     fn update(&mut self, rule: &Rule, task_pool: &TaskPool);
     fn render(&self, data: &mut CellRenderer);
 
-    fn reset(&mut self);
+    fn reset(&mut self) {
+        let bounds = self.bounds();
+        self.set_bounds(0);
+        self.set_bounds(bounds);
+    }
+
     fn spawn_noise(&mut self, rule: &Rule);
 
     fn cell_count(&self) -> usize;

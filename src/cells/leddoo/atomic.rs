@@ -270,10 +270,6 @@ impl crate::cells::Sim for LeddooAtomic {
         });
     }
 
-    fn reset(&mut self) {
-        self.chunks.write().unwrap().reset();
-    }
-
     fn spawn_noise(&mut self, rule: &Rule) {
         self.spawn_noise(rule);
     }
