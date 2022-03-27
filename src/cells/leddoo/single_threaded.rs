@@ -1,3 +1,13 @@
+/*
+    how it works:
+        - cells are stored as a 3d array.
+        - see utils.rs for index <-> position conversion.
+        - neighbor counts are stored persistently.
+            - on every change, the neighbors need to be updated (eg: spawn_noise).
+            - each tick updates the cells, and then only has to update the
+            neighbors of cells that actually changed.
+*/
+
 use bevy::{
     math::{IVec3},
     tasks::TaskPool,

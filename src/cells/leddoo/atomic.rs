@@ -1,3 +1,41 @@
+/*
+    how it works:
+        - pretty much exactly like single_threaded.rs
+        - but the "world" is divided into "chunks".
+            - note that the cells are still laid out in a "flat" 3d array, just
+              like in single_threaded.rs - they are not stored as chunks! only
+              grouped logically for parallelism.
+        - each chunk is processed by one task.
+        - updating the cells is entirely lock free and atomic free.
+            - this is equivalent to spawning one task per cell.
+            - each task collects a list of global cell indices that changed in
+              the respective chunk.
+        - propagating the neighbors is where it gets interesting:
+            - we could just use atomic operations and be done with it.
+            - but due to chunking, we can only get race conditions at the chunk
+              boundaries:
+                .--------.--------.
+                | nnn  nn|n!      |
+                | nUn  nU|n!      |
+                | nnn  nn|n!      |
+                '--------'--------'
+              `U` is a changed cell, `n` are the neighbors that need to be
+              updated. only updates at the chunk boundaries can affect
+              neighboring chunks. so we only need synchronization for border
+              cells. update_neighbors does this using atomics. (we also need to
+              use atomics for cells one position away from the boundary, because
+              they update the boundary cells, which can be updated by the
+              neighboring chunk in parallel.)
+            - note: i haven't actually compared the performance to a
+              non-chunking atomic version. that's because this atomic
+              implementation emerged from a multi-threaded implementation (you
+              can check the commit history) that used chunking and only did
+              updates inside the chunk in parallel (updates on the border were
+              collected and done single threaded).
+              since the performance was bottlenecked by the serial update, i
+              decided to use atomics at the boundaries.
+*/
+
 use bevy::{
     math::{ivec3, IVec3},
     tasks::{TaskPool},
