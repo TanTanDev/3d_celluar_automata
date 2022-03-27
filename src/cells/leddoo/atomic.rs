@@ -34,6 +34,17 @@
               collected and done single threaded).
               since the performance was bottlenecked by the serial update, i
               decided to use atomics at the boundaries.
+    performance:
+        - on my machines (intel 4c/6c), the performance scales roughly with the
+          number of physical cores. that seems reasonable, as there isn't much
+          io going on.
+        - running updates in a tight loop (without the bevy runtime) yields much
+          better performance than calling update once in Sims::update (~ 14 ns
+          per cell vs 22 ns). this could be related to cache eviction, as
+          running multiple iterations in Sims::update approaches the lower bound
+          given by the tight loop.
+        - there appears to be some measurable amount of overhead: increasing the
+          bounding size improves the mt speedup ratio.
 */
 
 use bevy::{

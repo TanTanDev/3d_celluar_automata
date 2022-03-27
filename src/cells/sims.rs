@@ -25,6 +25,7 @@ pub struct Sims {
     sims: Vec<(String, Box<dyn Sim>)>,
     active_sim: usize,
     bounds: i32,
+    update_dt: std::time::Duration,
 
     renderer: Option<Box<CellRenderer>>, // rust...
 
@@ -42,6 +43,7 @@ impl Sims {
             sims: vec![],
             active_sim: usize::MAX,
             bounds: 64,
+            update_dt: std::time::Duration::from_secs(0),
             renderer: Some(Box::new(CellRenderer::new())),
             rule: None,
             color_method: ColorMethod::DistToCenter,
@@ -120,9 +122,13 @@ pub fn update(
                 bounds = this.bounds; // i don't like it.
             }
 
-
+            let update_dt = this.update_dt;
             let rule = this.rule.take().unwrap();
             let sim = &mut this.sims[active_sim].1;
+
+            let cell_count = sim.cell_count();
+            ui.label(format!("cells: {}", cell_count));
+            ui.label(format!("update: {:.2?} per cell", update_dt / cell_count.max(1) as u32));
 
             if ui.button("reset").clicked() {
                 sim.reset();
@@ -197,7 +203,11 @@ pub fn update(
     let mut renderer = this.renderer.take().unwrap();
 
     let sim = &mut this.sims[active_sim].1;
+
+    let t0 = std::time::Instant::now();
     sim.update(&rule, &task_pool.0);
+    let update_dt = t0.elapsed();
+
     sim.render(&mut renderer);
 
     let instance_data = &mut query.iter_mut().next().unwrap().0;
@@ -223,6 +233,7 @@ pub fn update(
 
     this.bounds     = bounds;
     this.active_sim = active_sim;
+    this.update_dt  = update_dt;
     this.renderer   = Some(renderer);
     this.rule       = Some(rule);
 }

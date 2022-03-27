@@ -6,6 +6,7 @@
             - on every change, the neighbors need to be updated (eg: spawn_noise).
             - each tick updates the cells, and then only has to update the
             neighbors of cells that actually changed.
+        - on my machine, this is ~20x faster than tantan's single threaded impl.
 */
 
 use bevy::{
