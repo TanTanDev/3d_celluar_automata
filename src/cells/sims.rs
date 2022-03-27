@@ -161,7 +161,7 @@ pub fn update(
             let old_rule = rule.clone();
 
             egui::ComboBox::from_label("Neighbor method")
-                .selected_text(format!("{:?}", this.color_method))
+                .selected_text(format!("{:?}", rule.neighbour_method))
                 .show_ui(ui, |ui| {
                     ui.selectable_value(&mut rule.neighbour_method, NeighbourMethod::Moore, "Moore");
                     ui.selectable_value(&mut rule.neighbour_method, NeighbourMethod::VonNeuman, "Von Neumann");
