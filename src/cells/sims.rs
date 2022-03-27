@@ -66,7 +66,7 @@ impl Sims {
 
         let rule = self.rule.take().unwrap();
         self.active_sim = index;
-        self.sims[index].1.set_bounds(self.bounds);
+        self.bounds = self.sims[index].1.set_bounds(self.bounds);
         self.sims[index].1.spawn_noise(&rule);
         self.renderer.as_mut().unwrap().set_bounds(self.bounds);
         self.rule = Some(rule);
@@ -117,6 +117,7 @@ pub fn update(
 
             if active_sim != old_active {
                 this.set_sim(active_sim);
+                bounds = this.bounds; // i don't like it.
             }
 
 

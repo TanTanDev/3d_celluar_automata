@@ -11,64 +11,92 @@ use crate::{
     utils::{self},
 };
 
-use super::{
-    CHUNK_SIZE, CHUNK_CELL_COUNT,
-    index_to_chunk_index, index_to_chunk_offset,
-};
-
-use std::sync::{atomic::{AtomicU8, Ordering}, Arc, RwLock};
+use std::sync::{atomic::{AtomicU8, Ordering}, Arc};
 use std::cell::UnsafeCell;
 
 
+const CHUNK_SIZE:       usize = 32;
+const CHUNK_CELL_COUNT: usize = CHUNK_SIZE*CHUNK_SIZE*CHUNK_SIZE;
 
-#[derive(Default)]
-struct Cell {
-    value: u8,
-    neighbors: UnsafeCell<AtomicU8>,
+fn bounds_to_chunk_radius(bounds: i32) -> usize {
+    (bounds as usize + CHUNK_SIZE - 1) / CHUNK_SIZE
 }
 
-unsafe impl Sync for Cell {}
+fn chunk_offset_to_pos(offset: usize) -> IVec3 {
+    utils::index_to_pos(offset, CHUNK_SIZE as i32)
+}
 
-impl Cell {
-    fn is_dead(&self) -> bool {
-        self.value == 0
+fn chunk_is_border_pos(pos: IVec3, offset: i32) -> bool {
+    pos.x - offset <= 0 || pos.x + offset >= CHUNK_SIZE as i32 - 1 ||
+    pos.y - offset <= 0 || pos.y + offset >= CHUNK_SIZE as i32 - 1 ||
+    pos.z - offset <= 0 || pos.z + offset >= CHUNK_SIZE as i32 - 1
+}
+
+
+
+#[derive(Clone)]
+struct Values (Arc<Vec<UnsafeCell<AtomicU8>>>);
+
+unsafe impl Sync for Values {}
+unsafe impl Send for Values {}
+
+impl Values {
+    fn new(length: usize) -> Values {
+        Values(Arc::new((0..length).map(|_| UnsafeCell::new(AtomicU8::new(0))).collect()))
     }
 
-    fn neighbors(&self) -> u8 {
-        unsafe { *(*self.neighbors.get()).get_mut() }
+    fn read(&self, index: usize) -> u8 {
+        unsafe { *(*self.0[index].get()).get_mut() }
     }
 
-    fn neighbors_mut(&self) -> &mut u8 {
-        unsafe { (*self.neighbors.get()).get_mut() }
+    fn write(&self, index: usize) -> &mut u8 {
+        unsafe { (*self.0[index].get()).get_mut() }
     }
 
-    fn neighbors_atomic(&self) -> &mut AtomicU8 {
-        unsafe { &mut *self.neighbors.get() }
+    fn atomic(&self,index: usize) -> &mut AtomicU8 {
+        unsafe { &mut *self.0[index].get() }
     }
 }
 
-type Chunk  = super::Chunk<Cell>;
-type Chunks = super::Chunks<Cell>;
+
+fn cell_is_dead(value: u8) -> bool {
+    value == 0
+}
+
 
 pub struct LeddooAtomic {
-    chunks: Arc<RwLock<Chunks>>,
+    values:    Values,
+    neighbors: Values,
+    chunk_radius: usize,
+    chunk_count:  usize,
 }
 
 impl LeddooAtomic {
     pub fn new() -> Self {
         LeddooAtomic {
-            chunks: Arc::new(RwLock::new(Chunks::new())),
+            values:    Values::new(0),
+            neighbors: Values::new(0),
+            chunk_radius: 0,
+            chunk_count: 0,
         }
     }
 
     pub fn set_bounds(&mut self, new_bounds: i32) -> i32 {
-        let mut chunks = self.chunks.write().unwrap();
-        chunks.set_bounds(new_bounds)
+        let radius = bounds_to_chunk_radius(new_bounds);
+        let bounds = radius * CHUNK_SIZE;
+        self.values    = Values::new(bounds*bounds*bounds);
+        self.neighbors = Values::new(bounds*bounds*bounds);
+        self.chunk_radius = radius;
+        self.chunk_count  = radius*radius*radius;
+        bounds as i32
     }
 
     pub fn bounds(&self) -> i32 {
-        let chunks = self.chunks.read().unwrap();
-        chunks.bounds()
+        (self.chunk_radius * CHUNK_SIZE) as i32
+    }
+
+    pub fn total_cell_count(&self) -> usize {
+        self.chunk_count * CHUNK_CELL_COUNT
     }
 
     pub fn center(&self) -> IVec3 {
@@ -77,33 +105,29 @@ impl LeddooAtomic {
     }
 
     pub fn cell_count(&self) -> usize {
-        let chunks = self.chunks.read().unwrap();
         let mut result = 0;
-        for chunk in &chunks.chunks {
-            for cell in chunk.0.iter() {
-                if !cell.is_dead() {
-                    result += 1;
-                }
+        for index in 0..self.total_cell_count() {
+            if !cell_is_dead(self.values.read(index)) {
+                result += 1;
             }
         }
         result
     }
 
 
-    fn update_neighbors(chunks: &Vec<Chunk>, chunk_index: usize, chunk_radius: usize,
-        rule: &Rule, offset: usize, inc: bool
+    fn update_neighbors(
+        neighbors: &Values,
+        index: usize, bounds: i32,
+        rule: &Rule, inc: bool
     ) {
-        let pos = Chunks::index_to_pos_ex(chunk_index*CHUNK_CELL_COUNT + offset, chunk_radius);
-
-        let local = Chunk::index_to_pos(offset);
-        if Chunk::is_border_pos(local, 1) {
+        let pos   = utils::index_to_pos(index, bounds);
+        let local = pos % CHUNK_SIZE as i32;
+        if chunk_is_border_pos(local, 1) {
             for dir in rule.neighbour_method.get_neighbour_iter() {
-                let neighbour_pos = utils::wrap(pos + *dir, (chunk_radius*CHUNK_SIZE) as i32);
+                let neighbor_pos = utils::wrap(pos + *dir, bounds);
+                let index = utils::pos_to_index(neighbor_pos, bounds);
 
-                let index  = Chunks::pos_to_index_ex(neighbour_pos, chunk_radius);
-                let chunk  = index_to_chunk_index(index);
-                let offset = index_to_chunk_offset(index);
-                let neighbors = &*chunks[chunk].0[offset].neighbors_atomic();
+                let neighbors = neighbors.atomic(index);
                 if inc {
                     neighbors.fetch_add(1, Ordering::Relaxed);
                 }
@@ -114,10 +138,10 @@ impl LeddooAtomic {
         }
         else {
             for dir in rule.neighbour_method.get_neighbour_iter() {
-                let neighbour_pos = local + *dir;
-                let offset = Chunk::pos_to_index(neighbour_pos);
+                let neighbor_pos = pos + *dir;
+                let index = utils::pos_to_index(neighbor_pos, bounds);
 
-                let neighbors = chunks[chunk_index].0[offset].neighbors_mut();
+                let neighbors = neighbors.write(index);
                 if inc {
                     *neighbors += 1;
                 }
@@ -128,83 +152,96 @@ impl LeddooAtomic {
         }
     }
 
-    fn update_values(chunk: &mut Chunk, rule: &Rule,
+    fn update_values(
+        values: &Values, neighbors: &Values,
+        chunk_index: usize, chunk_radius: usize, bounds: i32,
+        rule: &Rule,
         spawns: &mut Vec<usize>, deaths: &mut Vec<usize>,
     ) {
-        for (offset, cell) in chunk.0.iter_mut().enumerate() {
-            if cell.is_dead() {
-                if rule.birth_rule.in_range(cell.neighbors()) {
-                    cell.value = rule.states;
-                    spawns.push(offset);
+        let chunk_pos = CHUNK_SIZE as i32 * utils::index_to_pos(chunk_index, chunk_radius as i32);
+        for offset in 0..CHUNK_CELL_COUNT {
+            let pos   = chunk_pos + chunk_offset_to_pos(offset);
+            let index = utils::pos_to_index(pos, bounds);
+
+            let value     = values.write(index);
+            let neighbors = neighbors.read(index);
+
+            if cell_is_dead(*value) {
+                if rule.birth_rule.in_range(neighbors) {
+                    *value = rule.states;
+                    spawns.push(index);
                 }
             }
             else {
-                if cell.value < rule.states || !rule.survival_rule.in_range(cell.neighbors()) {
-                    if cell.value == rule.states {
-                        deaths.push(offset);
+                if *value < rule.states || !rule.survival_rule.in_range(neighbors) {
+                    if *value == rule.states {
+                        deaths.push(index);
                     }
 
-                    cell.value -= 1;
+                    *value -= 1;
                 }
             }
         }
     }
 
     pub fn update(&mut self, rule: &Rule, tasks: &TaskPool) {
-        let mut chunks = self.chunks.write().unwrap();
-        let chunk_radius = chunks.chunk_radius;
-
-        let mut chunk_list = std::mem::take(&mut chunks.chunks);
-
         // update values.
         let mut value_tasks = vec![];
-        for mut chunk in chunk_list.into_iter() {
+        for chunk_index in 0..self.chunk_count {
+            let values    = self.values.clone();
+            let neighbors = self.neighbors.clone();
+            let chunk_radius = self.chunk_radius;
+            let bounds = self.bounds();
+
             let rule = rule.clone(); // shrug
             let mut chunk_spawns = vec![];
             let mut chunk_deaths = vec![];
 
             value_tasks.push(tasks.spawn(async move {
-                Self::update_values(&mut chunk, &rule,
+                Self::update_values(
+                    &values, &neighbors,
+                    chunk_index, chunk_radius, bounds,
+                    &rule,
                     &mut chunk_spawns, &mut chunk_deaths);
-                (chunk, chunk_spawns, chunk_deaths)
+                (chunk_spawns, chunk_deaths)
             }));
         }
 
         // collect spawns & deaths.
-        chunk_list = vec![];
         let mut chunk_spawns = vec![];
         let mut chunk_deaths = vec![];
         for task in value_tasks {
-            let (chunk, spawns, deaths) = future::block_on(task);
-            chunk_list.push(chunk);
+            let (spawns, deaths) = future::block_on(task);
             chunk_spawns.push(spawns);
             chunk_deaths.push(deaths);
         }
 
-        chunks.chunks = chunk_list;
-        drop(chunks);
-
 
         // update neighbors.
-        let mut neighbour_tasks = vec![];
-        for (chunk_index, (spawns, deaths)) in chunk_spawns.into_iter().zip(chunk_deaths).enumerate() {
+        let mut neighbor_tasks = vec![];
+        for (spawns, deaths) in chunk_spawns.into_iter().zip(chunk_deaths) {
+            let neighbors = self.neighbors.clone();
+            let bounds = self.bounds();
             let rule = rule.clone(); // shrug
 
-            let chunks = self.chunks.clone();
-
-            neighbour_tasks.push(tasks.spawn(async move {
-                let chunks = &chunks.read().unwrap().chunks;
-                for offset in spawns.iter() {
-                    Self::update_neighbors(chunks, chunk_index, chunk_radius, &rule, *offset, true);
+            neighbor_tasks.push(tasks.spawn(async move {
+                for index in spawns.iter() {
+                    Self::update_neighbors(
+                        &neighbors,
+                        *index, bounds,
+                        &rule, true);
                 }
 
-                for offset in deaths.iter() {
-                    Self::update_neighbors(chunks, chunk_index, chunk_radius, &rule, *offset, false);
+                for index in deaths.iter() {
+                    Self::update_neighbors(
+                        &neighbors,
+                        *index, bounds,
+                        &rule, false);
                 }
             }));
         }
 
-        for task in neighbour_tasks {
+        for task in neighbor_tasks {
             future::block_on(task);
         }
     }
@@ -213,28 +250,21 @@ impl LeddooAtomic {
     // TEMP: move to sims.
     #[allow(dead_code)]
     fn validate(&self, rule: &Rule) {
-        let chunks = self.chunks.read().unwrap();
-        let bounds = chunks.bounds();
-
-        for index in 0..chunks.chunk_count*CHUNK_CELL_COUNT {
-            let pos = chunks.index_to_pos(index);
+        for index in 0..self.total_cell_count() {
+            let pos = utils::index_to_pos(index, self.bounds());
 
             let mut neighbors = 0;
             for dir in rule.neighbour_method.get_neighbour_iter() {
-                let neighbour_pos = utils::wrap(pos + *dir, bounds);
+                let neighbor_pos = utils::wrap(pos + *dir, self.bounds());
+                let index = utils::pos_to_index(neighbor_pos, self.bounds());
 
-                let index  = chunks.pos_to_index(neighbour_pos);
-                let chunk  = index_to_chunk_index(index);
-                let offset = index_to_chunk_offset(index);
-                if chunks.chunks[chunk].0[offset].value == rule.states {
+                let value = self.values.read(index);
+                if value == rule.states {
                     neighbors += 1;
                 }
             }
 
-            let chunk  = index_to_chunk_index(index);
-            let offset = index_to_chunk_offset(index);
-            let cell   = &chunks.chunks[chunk].0[offset];
-            assert_eq!(neighbors, cell.neighbors());
+            assert_eq!(neighbors, self.neighbors.read(index));
         }
     }
 
@@ -242,17 +272,15 @@ impl LeddooAtomic {
         let center = self.center();
         let bounds = self.bounds();
 
-        let mut chunks = self.chunks.write().unwrap();
         utils::make_some_noise_default(center, |pos| {
-            let index  = chunks.pos_to_index(utils::wrap(pos, bounds));
-            let chunk  = index_to_chunk_index(index);
-            let offset = index_to_chunk_offset(index);
-            let cell = &mut chunks.chunks[chunk].0[offset];
-            if cell.is_dead() {
-                cell.value = rule.states;
+            let index = utils::pos_to_index(utils::wrap(pos, bounds), self.bounds());
+            let value = self.values.write(index);
+            if cell_is_dead(*value) {
+                *value = rule.states;
                 Self::update_neighbors(
-                    &chunks.chunks, chunk, chunks.chunk_radius,
-                    rule, offset, true);
+                    &self.neighbors,
+                    index, self.bounds(),
+                    rule, true);
             }
         });
     }
@@ -265,9 +293,11 @@ impl crate::cells::Sim for LeddooAtomic {
     }
 
     fn render(&self, renderer: &mut CellRenderer) {
-        self.chunks.read().unwrap().visit_cells(|index, cell| {
-            renderer.set(index, cell.value, cell.neighbors());
-        });
+        for index in 0..self.total_cell_count() {
+            renderer.set(index,
+                self.values.read(index),
+                self.neighbors.read(index));
+        }
     }
 
     fn spawn_noise(&mut self, rule: &Rule) {

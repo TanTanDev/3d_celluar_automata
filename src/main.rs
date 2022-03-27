@@ -48,9 +48,6 @@ fn setup(
     sims.add_sim("leddoo single-threaded".into(),
         Box::new(cells::leddoo::LeddooSingleThreaded::new()));
 
-    sims.add_sim("leddoo multi-threaded".into(),
-        Box::new(cells::leddoo::LeddooMultiThreaded::new()));
-
     sims.add_sim("leddoo atomic".into(),
         Box::new(cells::leddoo::LeddooAtomic::new()));
 
