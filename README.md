@@ -5,14 +5,12 @@ A 3D cellutomata implementation with Rust and Bevy
 Project creation was documented on my youtube page!
 https://youtu.be/63qlEpO73C4
 
-There are 2 implementations one is single threaded, the other one is multithreaded
+You can configure the simulation using a graphical interface:
+![gui](branding/gui.png)
 
-* **single threaded** works best in a small bounding box
-* **multi threaded** works best in a large bounding box
-
-## Controls
-* tap E to continously step forward the simulation
-* tap P to spawn a blob of cells in the middle
+There are various implementations by
+* [TanTanDev](https://github.com/TanTanDev)
+* [leddoo](https://github.com/leddoo)
 
 
 ## License
