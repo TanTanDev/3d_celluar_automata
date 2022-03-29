@@ -1,21 +1,21 @@
 use std::collections::HashMap;
 
 use bevy::{
-    input::Input,
-    math::{ivec3, vec3, IVec3},
-    prelude::{EventWriter, KeyCode, Plugin, Query, Res, ResMut},
+    math::{ivec3, IVec3},
+    tasks::TaskPool,
 };
 
 use crate::{
-    cell_renderer::{InstanceData, InstanceMaterialData},
-    rotating_camera::UpdateEvent,
+    cell_renderer::{CellRenderer},
     rule::Rule,
-    utils::{self, keep_in_bounds},
-    CellState,
+    utils,
 };
 
-struct CellsSinglethreaded {
+use super::CellState;
+
+pub struct CellsSinglethreaded {
     states: HashMap<IVec3, CellState>,
+    bounding_size: i32,
     // cached datta used for calculating state
     neighbours: HashMap<IVec3, u8>,
     changes: HashMap<IVec3, i32>,
@@ -26,6 +26,7 @@ impl CellsSinglethreaded {
     pub fn new() -> Self {
         CellsSinglethreaded {
             states: HashMap::new(),
+            bounding_size: 0,
             neighbours: HashMap::new(),
             changes: HashMap::new(),
             spawn: Vec::new(),
@@ -44,8 +45,7 @@ impl CellsSinglethreaded {
             if cell.value == rule.states {
                 // get neighbouring cells and increment
                 for dir in rule.neighbour_method.get_neighbour_iter() {
-                    let mut neighbour_pos = *cell_pos + *dir;
-                    keep_in_bounds(rule.bounding_size, &mut neighbour_pos);
+                    let neighbour_pos = utils::wrap(*cell_pos + *dir, self.bounding_size);
                     if !self.neighbours.contains_key(&neighbour_pos) {
                         self.neighbours.insert(neighbour_pos, 0);
                     }
@@ -57,7 +57,7 @@ impl CellsSinglethreaded {
     }
 
     pub fn calculate_changes(&mut self, rule: &Rule) {
-        let (x_range, y_range, z_range) = rule.get_bounding_ranges();
+        let (x_range, y_range, z_range) = utils::get_bounding_ranges(self.bounding_size);
         for z in z_range {
             for y in y_range.clone() {
                 for x in x_range.clone() {
@@ -68,7 +68,7 @@ impl CellsSinglethreaded {
                     };
                     match self.states.get(&cell_pos) {
                         Some(cell) => {
-                            if !(rule.survival_rule.in_range(neighbours)
+                            if !(rule.survival_rule.in_range_incorrect(neighbours)
                                 && cell.value == rule.states)
                             {
                                 self.changes.insert(cell_pos, -1i32);
@@ -76,16 +76,9 @@ impl CellsSinglethreaded {
                         }
                         None => {
                             // check if should spawn
-                            if rule.birth_rule.in_range(neighbours) {
-                                if cell_pos.x >= -rule.bounding_size
-                                    && cell_pos.x <= rule.bounding_size
-                                    && cell_pos.y >= -rule.bounding_size
-                                    && cell_pos.y <= rule.bounding_size
-                                    && cell_pos.z >= -rule.bounding_size
-                                    && cell_pos.z <= rule.bounding_size
-                                {
-                                    self.spawn.push((cell_pos, neighbours));
-                                }
+                            if rule.birth_rule.in_range_incorrect(neighbours) {
+                                // cell_pos is in bounds, because we iterate over the bounds.
+                                self.spawn.push((cell_pos, neighbours));
                             }
                         }
                     }
@@ -102,7 +95,6 @@ impl CellsSinglethreaded {
                 CellState::new(
                     rule.states,
                     *neighbours,
-                    utils::dist_to_center(*cell_pos, rule),
                 ),
             );
         }
@@ -122,65 +114,40 @@ impl CellsSinglethreaded {
         self.neighbours.clear();
     }
 }
-fn tick_cell(
-    rule: Res<Rule>,
-    mut cells: ResMut<CellsSinglethreaded>,
-    keyboard_input: Res<Input<KeyCode>>,
-    mut cell_event: EventWriter<UpdateEvent>,
-) {
-    if !keyboard_input.pressed(KeyCode::E) {
-        return;
-    }
-    cells.tick(&rule);
-    cell_event.send(UpdateEvent);
-}
 
-fn spawn_noise(
-    rule: Res<Rule>,
-    mut cells: ResMut<CellsSinglethreaded>,
-    keyboard_input: Res<Input<KeyCode>>,
-) {
-    if !keyboard_input.just_pressed(KeyCode::P) {
-        return;
-    }
-    utils::spawn_noise(&mut cells.states, &rule);
-}
 
-pub struct CellsSinglethreadedPlugin;
-impl Plugin for CellsSinglethreadedPlugin {
-    fn build(&self, app: &mut bevy::prelude::App) {
-        let cells_singlethreaded = CellsSinglethreaded::new();
-        app.insert_resource(cells_singlethreaded)
-            .add_system(prepare_cell_data)
-            .add_system(spawn_noise)
-            .add_system(tick_cell);
+impl crate::cells::Sim for CellsSinglethreaded {
+    fn update(&mut self, rule: &Rule, _task_pool: &TaskPool) {
+        self.tick(rule);
     }
-}
 
-fn prepare_cell_data(
-    rule: Res<Rule>,
-    cells: Res<CellsSinglethreaded>,
-    mut query: Query<&mut InstanceMaterialData>,
-) {
-    // take the first
-    let mut instance_data = query.iter_mut().next().unwrap();
-    instance_data.0.clear();
-    for cell in cells.states.iter() {
-        let pos = cell.0;
-        instance_data.0.push(InstanceData {
-            position: vec3(pos.x as f32, pos.y as f32, pos.z as f32),
-            scale: 1.0,
-            color: rule
-                .color_method
-                .color(
-                    rule.states,
-                    cell.1.value,
-                    cell.1.neighbours,
-                    cell.1.dist_to_center,
-                )
-                .as_rgba_f32(),
-            //color: Color::rgba(cell.1.value as f32 / rule.states as f32, 0.0, 0.0, 1.0)
-            //    .as_rgba_f32(),
+    fn render(&self, renderer: &mut CellRenderer) {
+        renderer.clear();
+        for cell in self.states.iter() {
+            renderer.set_pos(*cell.0, cell.1.value, cell.1.neighbours);
+        }
+    }
+
+    fn spawn_noise(&mut self, rule: &Rule) {
+        utils::make_some_noise_default(utils::center(self.bounding_size), |pos| {
+            self.states.insert(pos, CellState::new(rule.states, 0));
         });
     }
+
+    fn cell_count(&self) -> usize {
+        self.states.len()
+    }
+
+    fn bounds(&self) -> i32 {
+        self.bounding_size
+    }
+
+    fn set_bounds(&mut self, new_bounds: i32) -> i32 {
+        if new_bounds != self.bounding_size {
+            *self = CellsSinglethreaded::new();
+        }
+        self.bounding_size = new_bounds;
+        new_bounds
+    }
 }
+

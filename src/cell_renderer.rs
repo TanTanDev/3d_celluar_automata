@@ -20,6 +20,8 @@ use bevy::{
 };
 use bytemuck::{Pod, Zeroable};
 
+use crate::utils;
+
 #[derive(Component)]
 pub struct InstanceMaterialData(pub Vec<InstanceData>);
 impl ExtractComponent for InstanceMaterialData {
@@ -222,5 +224,51 @@ impl EntityRenderCommand for DrawMeshInstanced {
             }
         }
         RenderCommandResult::Success
+    }
+}
+
+
+pub struct CellRenderer {
+    pub bounds: i32,
+    pub values: Vec<u8>,
+    pub neighbors: Vec<u8>,
+}
+
+impl CellRenderer {
+    pub fn new() -> CellRenderer {
+        CellRenderer {
+            bounds: 0,
+            values: vec![],
+            neighbors: vec![],
+        }
+    }
+
+    pub fn cell_count(&self) -> usize {
+        (self.bounds*self.bounds*self.bounds) as usize
+    }
+
+    pub fn set_bounds(&mut self, new_bounds: i32) {
+        if new_bounds != self.bounds {
+            let new_count = new_bounds*new_bounds*new_bounds;
+            self.values.resize(new_count as usize, 0);
+            self.neighbors.resize(new_count as usize, 0);
+            self.bounds = new_bounds;
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.values.truncate(0);
+        self.values.resize(self.cell_count(), 0);
+        self.neighbors.truncate(0);
+        self.neighbors.resize(self.cell_count(), 0);
+    }
+
+    pub fn set(&mut self, index: usize, value: u8, neighbors: u8) {
+        self.values[index]    = value;
+        self.neighbors[index] = neighbors;
+    }
+
+    pub fn set_pos(&mut self, pos: IVec3, value: u8, neighbors: u8) {
+        self.set(utils::pos_to_index(pos, self.bounds), value, neighbors);
     }
 }
